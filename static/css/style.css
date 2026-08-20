@@ -565,8 +565,35 @@ body {
   font-size: 12px;
   font-weight: 500;
 }
+.not-found-disc {
+  background: #fff3cd !important;
+  color: #856404 !important;
+}
 
 .order-table-section { margin-bottom: 24px; }
+
+/* Discontinued badges */
+.disc-badge {
+  display: inline-block;
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffe08a;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.order-item-disc {
+  border-left: 3px solid #f0ad4e;
+  background: #fffdf5;
+}
+.order-item-disc:hover { background: #fff8e8 !important; }
+.disc-row { background: #fffdf5 !important; }
+.disc-row:hover { background: #fff8e8 !important; }
+.dot-orange { background: #f0ad4e; }
 
 /* Column Mapping Preview */
 .mapping-row {

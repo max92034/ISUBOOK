@@ -7,6 +7,7 @@ const LS_KEYS = {
   CONTAINERS: 'usibook_containers',
   LAST_IMPORT: 'usibook_last_import',
   SNAPSHOTS: 'usibook_snapshots',
+  DISCONTINUED: 'usibook_discontinued',
 };
 
 const WEEKS_IN_YEAR = 52;
@@ -23,6 +24,7 @@ const state = {
   containers: [],
   lastImport: null,
   snapshots: {},
+  discontinued: [],
   mergedData: [],
   stats: null,
   currentPage: 1,
@@ -88,6 +90,7 @@ function loadData() {
     state.containers = JSON.parse(localStorage.getItem(LS_KEYS.CONTAINERS) || '[]');
     state.lastImport = JSON.parse(localStorage.getItem(LS_KEYS.LAST_IMPORT) || 'null');
     state.snapshots = JSON.parse(localStorage.getItem(LS_KEYS.SNAPSHOTS) || '{}');
+    state.discontinued = JSON.parse(localStorage.getItem(LS_KEYS.DISCONTINUED) || '[]');
   } catch (e) {
     console.error('Failed to load data:', e);
     state.products = [];
@@ -95,7 +98,12 @@ function loadData() {
     state.containers = [];
     state.lastImport = null;
     state.snapshots = {};
+    state.discontinued = [];
   }
+}
+
+function saveDiscontinued() {
+  localStorage.setItem(LS_KEYS.DISCONTINUED, JSON.stringify(state.discontinued));
 }
 
 function saveProducts() {
@@ -369,7 +377,13 @@ function parseMainExcel(workbook) {
     });
   }
 
-  return { products, inventory };
+  const discontinued = Object.entries(discInfo).map(([code, info]) => ({
+    item_code: code,
+    english_name: info.english_name,
+    sales_total: info.sales_total,
+  }));
+
+  return { products, inventory, discontinued };
 }
 
 function parseWeeklyExcel(workbook) {
@@ -618,8 +632,9 @@ function exportBackup() {
     containers: state.containers,
     last_import: state.lastImport,
     snapshots: state.snapshots,
+    discontinued: state.discontinued,
     export_date: new Date().toISOString(),
-    version: '1.0',
+    version: '1.1',
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -638,11 +653,13 @@ function importBackup(jsonText) {
   state.containers = data.containers || [];
   state.lastImport = data.last_import || null;
   state.snapshots = data.snapshots || {};
+  state.discontinued = data.discontinued || [];
   saveProducts();
   saveInventory();
   saveContainers();
   saveLastImport();
   saveSnapshots();
+  saveDiscontinued();
 }
 
 // ===== Rendering =====
@@ -1123,7 +1140,12 @@ function setupEventListeners() {
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
-      const { products, inventory: newInv } = parseMainExcel(workbook);
+      const { products, inventory: newInv, discontinued: newDisc } = parseMainExcel(workbook);
+
+      if (newDisc && newDisc.length) {
+        state.discontinued = newDisc;
+        saveDiscontinued();
+      }
 
       const existingInvMap = {};
       for (const inv of state.inventory) {
@@ -1235,13 +1257,15 @@ async function handleSetupFile(file) {
   try {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: 'array' });
-    const { products, inventory } = parseMainExcel(workbook);
+    const { products, inventory, discontinued } = parseMainExcel(workbook);
 
     if (!products.length) {
       resultEl.innerHTML = '<div class="import-result error">❌ 未找到任何產品資料，請確認檔案包含「USI庫存情況」工作表</div>';
       return;
     }
 
+    state.discontinued = discontinued || [];
+    saveDiscontinued();
     doMainImport(products, inventory);
 
     resultEl.innerHTML = `
@@ -1512,17 +1536,24 @@ function analyzeOrders(orderItems) {
   for (const p of state.products) {
     prodMap[p.item_code] = p;
   }
+  const discSet = new Set(state.discontinued.map(d => d.item_code));
+  const discNameMap = {};
+  for (const d of state.discontinued) {
+    discNameMap[d.item_code] = d.english_name || '';
+  }
 
   return orderItems.map(item => {
     const inv = invMap[item.sku];
     const prod = prodMap[item.sku];
+    const isDiscontinued = discSet.has(item.sku);
 
     if (!prod) {
       return {
         ...item,
         status: 'not_found',
         name: '',
-        english_name: '',
+        english_name: discNameMap[item.sku] || '',
+        discontinued: isDiscontinued,
         g: 0, h: 0, i: 0, j: 0,
         newJ: 0,
         total_produced: 0,
@@ -1557,6 +1588,7 @@ function analyzeOrders(orderItems) {
       status,
       name: prod.name || '',
       english_name: prod.english_name || '',
+      discontinued: isDiscontinued,
       g, h, i, j, newJ,
       total_produced: totalProduced,
       huiyang_inv: huiyang,
@@ -1573,6 +1605,7 @@ function renderOrderAnalysis() {
   const ship = analysis.filter(a => a.status === 'ship');
   const produce = analysis.filter(a => a.status === 'produce');
   const notFound = analysis.filter(a => a.status === 'not_found');
+  const discontinued = analysis.filter(a => a.discontinued);
 
   document.getElementById('order-file-info').textContent =
     `${state.orderFileName} | ${analysis.length} 項 | ${new Date().toISOString().slice(0, 10)}`;
@@ -1582,6 +1615,7 @@ function renderOrderAnalysis() {
       <div class="order-summary-item"><span class="order-dot dot-green"></span> 安全: <strong>${safe.length}</strong></div>
       <div class="order-summary-item"><span class="order-dot dot-blue"></span> 需出貨: <strong>${ship.length}</strong></div>
       <div class="order-summary-item"><span class="order-dot dot-red"></span> 需生產: <strong>${produce.length}</strong></div>
+      ${discontinued.length > 0 ? `<div class="order-summary-item"><span class="order-dot dot-orange"></span> 不再銷售: <strong>${discontinued.length}</strong></div>` : ''}
       ${notFound.length > 0 ? `<div class="order-summary-item"><span class="order-dot dot-gray"></span> 找不到: <strong>${notFound.length}</strong></div>` : ''}
     </div>
   `;
@@ -1595,9 +1629,11 @@ function renderOrderAnalysis() {
   if (notFound.length > 0) {
     nfEl.style.display = 'block';
     document.getElementById('not-found-count').textContent = notFound.length;
-    document.getElementById('not-found-list').innerHTML = notFound.map(a =>
-      `<span class="not-found-tag">${a.sku} (${fmt(a.quantity)})</span>`
-    ).join('');
+    document.getElementById('not-found-list').innerHTML = notFound.map(a => {
+      const discTag = a.discontinued ? ' <span class="disc-badge">不再銷售</span>' : '';
+      const discName = a.english_name ? ` - ${a.english_name.slice(0, 30)}` : '';
+      return `<span class="not-found-tag ${a.discontinued ? 'not-found-disc' : ''}">${a.sku} (${fmt(a.quantity)})${discName}${discTag}</span>`;
+    }).join('');
   } else {
     nfEl.style.display = 'none';
   }
@@ -1615,9 +1651,10 @@ function renderOrderCard(elId, items, type) {
     const arrow = a.j >= 0 ? `${fmt(a.j)}` : `${fmtSigned(a.j)}`;
     const newJClass = a.newJ < 0 ? 'neg' : '';
     const shortageLabel = type === 'produce' ? '需生產' : '可出貨';
+    const discBadge = a.discontinued ? '<span class="disc-badge" title="此型號已不再銷售">⚠ 不再銷售</span>' : '';
     return `
-      <div class="order-item" onclick="showDetail('${a.sku}')" style="cursor:pointer">
-        <div class="order-item-sku">${a.sku}</div>
+      <div class="order-item ${a.discontinued ? 'order-item-disc' : ''}" onclick="showDetail('${a.sku}')" style="cursor:pointer">
+        <div class="order-item-sku">${a.sku} ${discBadge}</div>
         <div class="order-item-name">${a.name || a.english_name || ''}</div>
         <div class="order-item-nums">
           <span>訂單: <strong>${fmt(a.quantity)}</strong></span>
@@ -1645,11 +1682,14 @@ function renderOrderTable(analysis) {
     else if (a.status === 'produce') badge = '<span class="status-badge status-red">產</span>';
     else badge = '<span class="status-badge" style="background:#eee;color:#999">?</span>';
 
+    const discBadge = a.discontinued ? ' <span class="disc-badge" title="此型號已不再銷售">⚠</span>' : '';
+    const rowClass = a.discontinued ? ' class="disc-row"' : '';
+
     return `
-      <tr onclick="showDetail('${a.sku}')" style="cursor:pointer">
+      <tr onclick="showDetail('${a.sku}')" style="cursor:pointer"${rowClass}>
         <td>${badge}</td>
-        <td><strong>${a.sku}</strong></td>
-        <td>${a.name || '-'}</td>
+        <td><strong>${a.sku}</strong>${discBadge}</td>
+        <td>${a.name || a.english_name || '-'}</td>
         <td class="num">${fmt(a.quantity)}</td>
         <td class="num ${valClass(a.j)}">${fmtSigned(a.j)}</td>
         <td class="num ${valClass(a.newJ)}"><strong>${fmtSigned(a.newJ)}</strong></td>
