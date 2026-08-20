@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>USI 庫存管理工具</title>
+  <link rel="stylesheet" href="./static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <!-- First-time Setup Screen -->
+  <div id="setup-screen" class="setup-screen" style="display:none">
+    <div class="setup-card">
+      <div class="setup-icon">🏭</div>
+      <h1>USI 庫存管理工具</h1>
+      <p class="setup-desc">歡迎使用！首次使用請上傳 USI 總檔 Excel 來初始化產品資料。</p>
+      <div class="setup-steps">
+        <div class="setup-step">
+          <span class="step-num">1</span>
+          <span>上傳「USI庫存及接单明细总档」Excel 檔案</span>
+        </div>
+        <div class="setup-step">
+          <span class="step-num">2</span>
+          <span>系統自動解析所有產品、庫存、銷售資料</span>
+        </div>
+        <div class="setup-step">
+          <span class="step-num">3</span>
+          <span>開始使用庫存管理儀表板</span>
+        </div>
+      </div>
+      <div class="drop-zone" id="setup-drop-zone">
+        <div class="drop-icon">📂</div>
+        <p>拖曳 Excel 檔案到此處或<span class="link">點擊選擇</span></p>
+        <p class="drop-hint">支援 .xls, .xlsx 格式 | 需包含「USI庫存情況」工作表</p>
+        <input type="file" id="setup-file-input" accept=".xls,.xlsx" hidden>
+      </div>
+      <div id="setup-result"></div>
+      <p class="setup-note">資料儲存在您的瀏覽器 localStorage 中，不會上傳到任何伺服器。</p>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="main-app" style="display:none">
+    <nav class="navbar">
+      <div class="nav-brand">
+        <span class="nav-logo">🏭</span>
+        <span class="nav-title">USI 庫存管理工具</span>
+      </div>
+      <div class="nav-actions">
+        <span class="nav-update" id="last-update">載入中...</span>
+        <button class="btn btn-primary" id="import-btn">📥 匯入週資料</button>
+        <button class="btn btn-outline" id="export-btn">📊 匯出 CSV</button>
+        <button class="btn btn-outline" id="data-btn">💾 資料管理</button>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <section class="kpi-grid">
+        <div class="kpi-card kpi-red">
+          <div class="kpi-header"><span class="kpi-dot dot-red"></span> 緊急下單</div>
+          <div class="kpi-value" id="red-count">--</div>
+          <div class="kpi-sub">結餘 ≤ 0，需立即補貨</div>
+        </div>
+        <div class="kpi-card kpi-yellow">
+          <div class="kpi-header"><span class="kpi-dot dot-yellow"></span> 需關注</div>
+          <div class="kpi-value" id="yellow-count">--</div>
+          <div class="kpi-sub">預估 4 週內用完</div>
+        </div>
+        <div class="kpi-card kpi-green">
+          <div class="kpi-header"><span class="kpi-dot dot-green"></span> 庫存健康</div>
+          <div class="kpi-value" id="green-count">--</div>
+          <div class="kpi-sub">庫存充足</div>
+        </div>
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-header"><span class="kpi-dot dot-blue"></span> 在途貨櫃</div>
+          <div class="kpi-value" id="container-count">--</div>
+          <div class="kpi-sub" id="container-detail">--</div>
+        </div>
+        <div class="kpi-card kpi-orange">
+          <div class="kpi-header">🔍 需判斷是否生產</div>
+          <div class="kpi-value" id="judge-count">--</div>
+          <div class="kpi-sub">結餘&lt;0 且 &lt;總庫存</div>
+        </div>
+        <div class="kpi-card kpi-teal">
+          <div class="kpi-header">📦 有貨可出</div>
+          <div class="kpi-value" id="available-count">--</div>
+          <div class="kpi-sub">4月內賣光，庫存&gt;20</div>
+        </div>
+        <div class="kpi-card kpi-purple">
+          <div class="kpi-header">🏭 需要生產</div>
+          <div class="kpi-value" id="produce-count">--</div>
+          <div class="kpi-sub">4月內賣光，庫存&lt;20</div>
+        </div>
+      </section>
+
+      <section class="container-section" id="container-section">
+        <h2 class="section-title">📦 在途貨櫃</h2>
+        <div class="container-timeline" id="container-timeline"></div>
+      </section>
+
+      <section class="changes-section">
+        <h2 class="section-title">📉 本週結餘下降最多 (Top 10)</h2>
+        <div class="changes-list" id="biggest-drops"></div>
+      </section>
+
+      <section class="product-section">
+        <div class="table-toolbar">
+          <div class="filter-tabs">
+            <button class="tab active" data-status="" data-prod="">全部</button>
+            <button class="tab" data-status="red">🔴 緊急</button>
+            <button class="tab" data-status="yellow">🟡 注意</button>
+            <button class="tab" data-status="green">🟢 健康</button>
+            <span class="tab-sep">|</span>
+            <button class="tab" data-prod="judge">🔍 需判斷生產</button>
+            <button class="tab" data-prod="available">📦 有貨可出</button>
+            <button class="tab" data-prod="produce">🏭 需要生產</button>
+          </div>
+          <div class="search-box">
+            <input type="text" id="search-input" placeholder="搜尋產品編號或名稱...">
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table" id="product-table">
+            <thead>
+              <tr>
+                <th class="col-status">狀態</th>
+                <th class="sortable" data-sort="item_code">Item</th>
+                <th class="sortable" data-sort="name">產品名稱</th>
+                <th>英文品名</th>
+                <th class="sortable num" data-sort="g">庫存 G</th>
+                <th class="sortable num" data-sort="h">接單 H</th>
+                <th class="sortable num" data-sort="i">海上 I</th>
+                <th class="sortable num" data-sort="j">結餘 J</th>
+                <th class="sortable num" data-sort="p">週變化 P</th>
+                <th class="sortable num" data-sort="sales_2025">2025售 W</th>
+                <th class="sortable num" data-sort="total_shipped">總出 X</th>
+                <th class="sortable num" data-sort="total_produced">總庫存 Q</th>
+                <th class="num">惠陽 R</th>
+                <th class="num">印尼 S</th>
+                <th class="num">緬甸 T</th>
+                <th class="num">預估可用</th>
+                <th class="col-expand"></th>
+                <th class="num">網站</th>
+              </tr>
+            </thead>
+            <tbody id="product-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="pagination"></div>
+      </section>
+
+      <section class="sales-section">
+        <h2 class="section-title">📈 銷售分析</h2>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <h3>Top 20 暢銷產品 (2025)</h3>
+            <div class="chart-container"><canvas id="top-chart"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <h3>Bottom 20 滯銷產品 (2025)</h3>
+            <div class="chart-container"><canvas id="bottom-chart"></canvas></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Import Modal -->
+  <div class="modal-overlay" id="import-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📥 匯入週資料</h2>
+        <button class="modal-close" id="import-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>上傳美國辦公室每週傳來的 Excel/CSV 檔案</p>
+        <div class="info-box">
+          <strong>系統將自動執行：</strong>
+          <ul>
+            <li>將目前的 G/H/I 移至 L/M/N（上週快照）</li>
+            <li>填入新的 G/H/I 數值</li>
+            <li>自動計算結餘 J = G - H + I</li>
+            <li>自動計算週變化 P = J - O</li>
+            <li>儲存歷史快照</li>
+          </ul>
+        </div>
+        <div class="drop-zone" id="drop-zone">
+          <div class="drop-icon">📂</div>
+          <p>拖曳檔案到此處或<span class="link">點擊選擇</span></p>
+          <p class="drop-hint">支援 .xlsx, .xls, .csv 格式</p>
+          <input type="file" id="file-input" accept=".xlsx,.xls,.csv" hidden>
+        </div>
+        <div id="import-result" class="import-result"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="import-cancel">取消</button>
+        <button class="btn btn-primary" id="import-confirm" disabled>確認匯入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Product Detail Modal -->
+  <div class="modal-overlay" id="detail-modal" style="display:none">
+    <div class="modal modal-large">
+      <div class="modal-header">
+        <h2 id="detail-title">產品詳情</h2>
+        <button class="modal-close" id="detail-close">✕</button>
+      </div>
+      <div class="modal-body" id="detail-body"></div>
+    </div>
+  </div>
+
+  <!-- Data Management Modal -->
+  <div class="modal-overlay" id="data-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>💾 資料管理</h2>
+        <button class="modal-close" id="data-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-box">
+          <strong>目前資料狀態：</strong>
+          <div id="data-status">載入中...</div>
+        </div>
+
+        <div class="data-section">
+          <h3>匯出備份</h3>
+          <p class="hint">下載所有資料為 JSON 檔案，可用於備份或轉移到其他瀏覽器。</p>
+          <button class="btn btn-primary" id="backup-export-btn">下載備份 JSON</button>
+        </div>
+
+        <div class="data-section">
+          <h3>匯入備份</h3>
+          <p class="hint">從 JSON 備份檔案還原資料（會覆蓋目前資料）。</p>
+          <input type="file" id="backup-input" accept=".json" hidden>
+          <button class="btn btn-outline" id="backup-import-btn">選擇 JSON 檔案</button>
+          <div id="backup-result"></div>
+        </div>
+
+        <div class="data-section">
+          <h3>重新初始化</h3>
+          <p class="hint">上傳 USI 總檔 Excel 重新載入所有產品資料（會保留每週匯入的庫存資料）。</p>
+          <input type="file" id="reinit-input" accept=".xls,.xlsx" hidden>
+          <button class="btn btn-outline" id="reinit-btn">選擇 Excel 檔案</button>
+          <div id="reinit-result"></div>
+        </div>
+
+        <div class="data-section">
+          <h3 style="color:var(--color-red)">清除所有資料</h3>
+          <p class="hint">清除瀏覽器中的所有庫存資料，此操作無法復原。</p>
+          <button class="btn btn-danger" id="clear-data-btn">清除所有資料</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./static/js/app.js"></script>
+</body>
+</html>
