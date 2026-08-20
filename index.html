@@ -339,30 +339,17 @@
         </div>
         <div class="drop-zone" id="order-drop-zone">
           <div class="drop-icon">📋</div>
-          <p>拖曳檔案到此處或<span class="link">點擊選擇</span></p>
-          <p class="drop-hint">支援 .xlsx, .xls, .csv 格式</p>
-          <input type="file" id="order-file-input" accept=".xlsx,.xls,.csv" hidden>
+          <p>拖曳檔案到此處或<span class="link">點擊選擇</span>（可多選）</p>
+          <p class="drop-hint">支援 .xlsx, .xls, .csv 格式，可同時上傳多張訂單</p>
+          <input type="file" id="order-file-input" accept=".xlsx,.xls,.csv" multiple hidden>
         </div>
         <div id="order-import-result" class="import-result"></div>
 
-        <!-- Column Mapping Preview -->
+        <!-- Multi-file Column Mapping -->
         <div id="order-mapping-section" style="display:none">
           <h3 style="font-size:15px;font-weight:600;margin-bottom:8px">欄位對應</h3>
-          <p style="font-size:13px;color:var(--color-text-sub);margin-bottom:10px">請確認系統偵測的欄位是否正確：</p>
-          <div class="mapping-row">
-            <label>SKU 欄位：</label>
-            <select id="mapping-sku-select"></select>
-          </div>
-          <div class="mapping-row">
-            <label>數量欄位：</label>
-            <select id="mapping-qty-select"></select>
-          </div>
-          <div class="preview-table-wrapper">
-            <table class="preview-table" id="order-preview-table">
-              <thead><tr id="preview-header"></tr></thead>
-              <tbody id="preview-body"></tbody>
-            </table>
-          </div>
+          <p style="font-size:13px;color:var(--color-text-sub);margin-bottom:10px">每個檔案的欄位可能不同，請分別確認：</p>
+          <div id="order-file-list"></div>
         </div>
       </div>
       <div class="modal-footer">

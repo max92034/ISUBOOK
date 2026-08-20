@@ -35,15 +35,12 @@ const state = {
   prodFilter: '',
   searchQuery: '',
   selectedFile: null,
-  selectedOrderFile: null,
+  selectedOrderFiles: [],
   charts: {},
   orderItems: [],
   orderAnalysis: [],
   orderFileName: '',
-  orderRawRows: [],
-  orderHeaders: [],
-  orderDetectedSkuCol: 0,
-  orderDetectedQtyCol: 1,
+  orderFiles: [],
 };
 
 // ===== Utility =====
@@ -1204,7 +1201,7 @@ function setupEventListeners() {
       document.getElementById('order-import-result').innerHTML = '';
       document.getElementById('order-mapping-section').style.display = 'none';
       document.getElementById('order-import-confirm').disabled = true;
-      state.selectedOrderFile = null;
+      state.orderFiles = [];
     }
   });
 
@@ -1214,7 +1211,7 @@ function setupEventListeners() {
     document.getElementById('order-import-result').innerHTML = '';
     document.getElementById('order-mapping-section').style.display = 'none';
     document.getElementById('order-import-confirm').disabled = true;
-    state.selectedOrderFile = null;
+    state.orderFiles = [];
   });
 
   document.getElementById('order-import-close').addEventListener('click', closeOrderImportModal);
@@ -1229,10 +1226,10 @@ function setupEventListeners() {
   orderDropZone.addEventListener('drop', (e) => {
     e.preventDefault();
     orderDropZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length) handleOrderFileSelect(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files.length) handleOrderFileSelect(e.dataTransfer.files);
   });
   orderFileInput.addEventListener('change', (e) => {
-    if (e.target.files.length) handleOrderFileSelect(e.target.files[0]);
+    if (e.target.files.length) handleOrderFileSelect(e.target.files);
   });
 
   document.getElementById('order-import-confirm').addEventListener('click', handleOrderImportConfirm);
@@ -1774,120 +1771,170 @@ function showDashboardView() {
     .forEach(el => el.style.display = '');
 }
 
-async function handleOrderFileSelect(file) {
-  state.selectedOrderFile = file;
-  document.getElementById('order-import-result').innerHTML =
-    `<div class="info-box">已選擇: <strong>${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)</div>`;
-  document.getElementById('order-mapping-section').style.display = 'none';
+async function handleOrderFileSelect(files) {
+  const fileArr = Array.from(files);
+  if (!fileArr.length) return;
+
+  for (const file of fileArr) {
+    if (state.orderFiles.some(f => f.file.name === file.name)) continue;
+    const orderFile = { file, headers: [], rows: [], skuCol: 0, qtyCol: 1, status: 'pending', error: '' };
+    state.orderFiles.push(orderFile);
+  }
+
+  document.getElementById('order-import-result').innerHTML = '';
+  document.getElementById('order-mapping-section').style.display = 'block';
   document.getElementById('order-import-confirm').disabled = true;
 
-  try {
-    const ext = file.name.split('.').pop().toLowerCase();
-    let raw;
-
-    if (ext === 'csv') {
-      const text = await file.text();
-      raw = parseOrderCSVRaw(text);
-    } else {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
-      raw = parseOrderExcelRaw(workbook);
+  await Promise.all(state.orderFiles.filter(f => f.status === 'pending').map(async (f) => {
+    f.status = 'parsing';
+    try {
+      const ext = f.file.name.split('.').pop().toLowerCase();
+      let raw;
+      if (ext === 'csv') {
+        const text = await f.file.text();
+        raw = parseOrderCSVRaw(text);
+      } else {
+        const data = await f.file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        raw = parseOrderExcelRaw(workbook);
+      }
+      if (!raw.rows.length) {
+        f.status = 'error';
+        f.error = '檔案中沒有資料';
+      } else {
+        f.headers = raw.headers;
+        f.rows = raw.rows;
+        const sampleRows = raw.rows.slice(1, 6);
+        const { skuCol, qtyCol } = detectColumns(raw.headers, sampleRows);
+        f.skuCol = skuCol;
+        f.qtyCol = qtyCol;
+        f.status = 'ready';
+      }
+    } catch (e) {
+      f.status = 'error';
+      f.error = e.message;
     }
+  }));
 
-    if (!raw.rows.length) {
-      document.getElementById('order-import-result').innerHTML =
-        '<div class="import-result error">❌ 檔案中沒有資料</div>';
-      return;
-    }
+  renderOrderFileList();
+  updateOrderConfirmButton();
+}
 
-    state.orderHeaders = raw.headers;
-    state.orderRawRows = raw.rows;
-
-    const sampleRows = raw.rows.slice(1, 6);
-    const { skuCol, qtyCol, hasHeader } = detectColumns(raw.headers, sampleRows);
-    state.orderDetectedSkuCol = skuCol;
-    state.orderDetectedQtyCol = qtyCol;
-
-    renderOrderMappingPreview(raw.headers, raw.rows, skuCol, qtyCol, hasHeader);
-    document.getElementById('order-mapping-section').style.display = 'block';
-    document.getElementById('order-import-confirm').disabled = false;
-  } catch (e) {
-    document.getElementById('order-import-result').innerHTML =
-      `<div class="import-result error">❌ 解析失敗: ${e.message}</div>`;
+function renderOrderFileList() {
+  const container = document.getElementById('order-file-list');
+  if (!state.orderFiles.length) {
+    container.innerHTML = '';
+    return;
   }
-}
 
-function renderOrderMappingPreview(headers, rows, skuCol, qtyCol, hasHeader) {
-  const skuSelect = document.getElementById('mapping-sku-select');
-  const qtySelect = document.getElementById('mapping-qty-select');
+  container.innerHTML = state.orderFiles.map((f, idx) => {
+    if (f.status === 'error') {
+      return `
+        <div class="order-file-item order-file-error">
+          <div class="order-file-header">
+            <strong>📄 ${f.file.name}</strong>
+            <button class="btn-icon" onclick="removeOrderFile(${idx})" title="移除">✕</button>
+          </div>
+          <div class="order-file-error-msg">❌ ${f.error}</div>
+        </div>
+      `;
+    }
 
-  const options = headers.map((h, i) => {
-    const sampleVal = rows[1] ? safeStr(rows[1][i]) : '';
-    const label = h ? `${h}` : `欄位 ${i + 1}`;
-    return `<option value="${i}">${label} (例: ${sampleVal.slice(0, 30)})</option>`;
+    const options = f.headers.map((h, i) => {
+      const sampleVal = f.rows[1] ? safeStr(f.rows[1][i]) : '';
+      const label = h ? `${h}` : `欄位 ${i + 1}`;
+      return `<option value="${i}">${label} (例: ${sampleVal.slice(0, 30)})</option>`;
+    }).join('');
+
+    const previewRows = f.rows.slice(1, 4);
+    const previewHtml = previewRows.map(row =>
+      `<tr>${f.headers.map((_, i) => {
+        let cls = '';
+        if (i === f.skuCol) cls = 'preview-col-sku';
+        if (i === f.qtyCol) cls = 'preview-col-qty';
+        return `<td class="${cls}">${safeStr(row[i]).slice(0, 40)}</td>`;
+      }).join('')}</tr>`
+    ).join('');
+
+    return `
+      <div class="order-file-item">
+        <div class="order-file-header">
+          <strong>📄 ${f.file.name}</strong>
+          <button class="btn-icon" onclick="removeOrderFile(${idx})" title="移除">✕</button>
+        </div>
+        <div class="mapping-row">
+          <label>SKU：</label>
+          <select id="order-sku-${idx}" onchange="updateOrderFileMapping(${idx})">${options}</select>
+        </div>
+        <div class="mapping-row">
+          <label>數量：</label>
+          <select id="order-qty-${idx}" onchange="updateOrderFileMapping(${idx})">${options}</select>
+        </div>
+        <div class="preview-table-wrapper">
+          <table class="preview-table">
+            <thead><tr>${f.headers.map((h, i) => {
+              let cls = '';
+              if (i === f.skuCol) cls = 'preview-col-sku';
+              if (i === f.qtyCol) cls = 'preview-col-qty';
+              return `<th class="${cls}">${h || `欄位 ${i+1}`}</th>`;
+            }).join('')}</tr></thead>
+            <tbody>${previewHtml}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
   }).join('');
 
-  skuSelect.innerHTML = options;
-  qtySelect.innerHTML = options;
-  skuSelect.value = skuCol;
-  qtySelect.value = qtyCol;
-
-  skuSelect.onchange = () => updatePreviewTable();
-  qtySelect.onchange = () => updatePreviewTable();
-
-  updatePreviewTable();
+  state.orderFiles.forEach((f, idx) => {
+    if (f.status !== 'ready') return;
+    const skuSel = document.getElementById(`order-sku-${idx}`);
+    const qtySel = document.getElementById(`order-qty-${idx}`);
+    if (skuSel) skuSel.value = f.skuCol;
+    if (qtySel) qtySel.value = f.qtyCol;
+  });
 }
 
-function updatePreviewTable() {
-  const skuCol = parseInt(document.getElementById('mapping-sku-select').value);
-  const qtyCol = parseInt(document.getElementById('mapping-qty-select').value);
-  const headers = state.orderHeaders;
-  const rows = state.orderRawRows;
+function updateOrderFileMapping(idx) {
+  const f = state.orderFiles[idx];
+  if (!f) return;
+  f.skuCol = parseInt(document.getElementById(`order-sku-${idx}`).value);
+  f.qtyCol = parseInt(document.getElementById(`order-qty-${idx}`).value);
+  renderOrderFileList();
+}
 
-  const headerRow = document.getElementById('preview-header');
-  headerRow.innerHTML = headers.map((h, i) => {
-    let cls = '';
-    if (i === skuCol) cls = 'preview-col-sku';
-    if (i === qtyCol) cls = 'preview-col-qty';
-    return `<th class="${cls}">${h || `欄位 ${i + 1}`}</th>`;
-  }).join('');
+function removeOrderFile(idx) {
+  state.orderFiles.splice(idx, 1);
+  renderOrderFileList();
+  updateOrderConfirmButton();
+}
 
-  const body = document.getElementById('preview-body');
-  const startRow = 1;
-  const previewRows = rows.slice(startRow, startRow + 5);
-  body.innerHTML = previewRows.map(row =>
-    `<tr>${headers.map((_, i) => {
-      let cls = '';
-      if (i === skuCol) cls = 'preview-col-sku';
-      if (i === qtyCol) cls = 'preview-col-qty';
-      const val = safeStr(row[i]);
-      return `<td class="${cls}">${val.slice(0, 40)}</td>`;
-    }).join('')}</tr>`
-  ).join('');
+function updateOrderConfirmButton() {
+  const hasReady = state.orderFiles.some(f => f.status === 'ready');
+  document.getElementById('order-import-confirm').disabled = !hasReady;
 }
 
 function closeOrderImportModal() {
   document.getElementById('order-import-modal').style.display = 'none';
-  state.selectedOrderFile = null;
+  state.orderFiles = [];
 }
 
 async function handleOrderImportConfirm() {
-  if (!state.selectedOrderFile) return;
+  const readyFiles = state.orderFiles.filter(f => f.status === 'ready');
+  if (!readyFiles.length) return;
   const btn = document.getElementById('order-import-confirm');
   btn.disabled = true;
   btn.textContent = '解析中...';
   document.getElementById('order-import-result').innerHTML =
-    '<div class="info-box">正在解析訂單檔案...</div>';
+    `<div class="info-box">正在合併 ${readyFiles.length} 張訂單...</div>`;
 
   try {
-    const skuCol = parseInt(document.getElementById('mapping-sku-select').value);
-    const qtyCol = parseInt(document.getElementById('mapping-qty-select').value);
+    let allItems = [];
+    for (const f of readyFiles) {
+      const items = extractOrderItems(f.headers, f.rows, f.skuCol, f.qtyCol, true);
+      allItems = allItems.concat(items);
+    }
 
-    const items = extractOrderItems(
-      state.orderHeaders, state.orderRawRows, skuCol, qtyCol, true
-    );
-
-    if (!items.length) {
+    if (!allItems.length) {
       document.getElementById('order-import-result').innerHTML =
         '<div class="import-result error">❌ 未找到有效訂單資料，請確認欄位對應是否正確</div>';
       btn.disabled = false;
@@ -1895,14 +1942,13 @@ async function handleOrderImportConfirm() {
       return;
     }
 
-    // Validation: warn if quantities are suspiciously large
-    const largeQtyItems = items.filter(it => it.quantity > 100000);
+    const largeQtyItems = allItems.filter(it => it.quantity > 100000);
     if (largeQtyItems.length > 0) {
       const sample = largeQtyItems.slice(0, 3).map(it => `${it.sku}: ${fmt(it.quantity)}`).join(', ');
       document.getElementById('order-import-result').innerHTML =
         `<div class="import-result error">
           ⚠️ 偵測到 ${largeQtyItems.length} 項數量異常大（超過 10 萬）：<br>
-          ${sample}${largeQtyItems.length > 3 ? '...' : ''}<br>
+          ${sample}<br>
           請確認數量欄位是否選擇正確。
         </div>`;
       btn.disabled = false;
@@ -1910,13 +1956,12 @@ async function handleOrderImportConfirm() {
       return;
     }
 
-    // Validation: warn if SKU values look like full product names (too long)
-    const longSkuItems = items.filter(it => it.sku.length > 30);
-    if (longSkuItems.length > items.length * 0.3) {
+    const longSkuItems = allItems.filter(it => it.sku.length > 30);
+    if (longSkuItems.length > allItems.length * 0.3) {
       document.getElementById('order-import-result').innerHTML =
         `<div class="import-result error">
           ⚠️ SKU 值似乎不是產品編號，而是完整產品名稱。<br>
-          偵測到 ${longSkuItems.length}/${items.length} 項 SKU 長度超過 30 字元。<br>
+          偵測到 ${longSkuItems.length}/${allItems.length} 項 SKU 長度超過 30 字元。<br>
           請確認 SKU 欄位是否選擇正確（應為 WU78157AA 等短編號）。
         </div>`;
       btn.disabled = false;
@@ -1924,20 +1969,24 @@ async function handleOrderImportConfirm() {
       return;
     }
 
-    const aggregated = aggregateOrders(items);
+    const aggregated = aggregateOrders(allItems);
     state.orderItems = aggregated;
-    state.orderFileName = state.selectedOrderFile.name;
+    state.orderFileName = readyFiles.length === 1
+      ? readyFiles[0].file.name
+      : `${readyFiles.length} 張訂單合併`;
     state.orderAnalysis = analyzeOrders(aggregated);
 
     const produce = state.orderAnalysis.filter(a => a.status === 'produce').length;
     const ship = state.orderAnalysis.filter(a => a.status === 'ship').length;
-    const safe = state.orderAnalysis.filter(a => a.status === 'safe').length;
+    const safe = state.orderAnalysis.filter(a => a.status === 'safe' && (!a.prod_status || a.prod_status === 'none')).length;
+    const watch = state.orderAnalysis.filter(a => a.status === 'safe' && a.prod_status && a.prod_status !== 'none').length;
     const nf = state.orderAnalysis.filter(a => a.status === 'not_found').length;
 
     document.getElementById('order-import-result').innerHTML =
       `<div class="import-result success">
-        <div class="stat"><span>總項目</span><strong>${aggregated.length}</strong></div>
+        <div class="stat"><span>合併項目</span><strong>${aggregated.length}</strong></div>
         <div class="stat"><span>安全</span><strong>${safe}</strong></div>
+        <div class="stat"><span>需注意</span><strong>${watch}</strong></div>
         <div class="stat"><span>需出貨</span><strong>${ship}</strong></div>
         <div class="stat"><span>需生產</span><strong>${produce}</strong></div>
         ${nf > 0 ? `<div class="stat"><span>找不到</span><strong>${nf}</strong></div>` : ''}

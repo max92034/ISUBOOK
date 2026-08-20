@@ -641,6 +641,37 @@ body {
 }
 .mapping-row select:focus { border-color: var(--color-blue); }
 .modal.modal-large { max-width: 700px; width: 90vw; }
+
+/* Multi-file order list */
+.order-file-item {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #fafbfc;
+}
+.order-file-item.order-file-error {
+  border-color: #f5c6cb;
+  background: #fdf0f0;
+}
+.order-file-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.order-file-header strong { font-size: 14px; }
+.order-file-error-msg { color: var(--color-red); font-size: 13px; }
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--color-text-sub);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.btn-icon:hover { background: var(--color-hover); }
 .preview-table-wrapper {
   max-height: 250px;
   overflow: auto;
