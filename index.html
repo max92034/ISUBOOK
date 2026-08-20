@@ -316,7 +316,7 @@
 
   <!-- Order Import Modal -->
   <div class="modal-overlay" id="order-import-modal" style="display:none">
-    <div class="modal">
+    <div class="modal modal-large">
       <div class="modal-header">
         <h2>📋 匯入客戶訂單</h2>
         <button class="modal-close" id="order-import-close">✕</button>
@@ -338,6 +338,26 @@
           <input type="file" id="order-file-input" accept=".xlsx,.xls,.csv" hidden>
         </div>
         <div id="order-import-result" class="import-result"></div>
+
+        <!-- Column Mapping Preview -->
+        <div id="order-mapping-section" style="display:none">
+          <h3 style="font-size:15px;font-weight:600;margin-bottom:8px">欄位對應</h3>
+          <p style="font-size:13px;color:var(--color-text-sub);margin-bottom:10px">請確認系統偵測的欄位是否正確：</p>
+          <div class="mapping-row">
+            <label>SKU 欄位：</label>
+            <select id="mapping-sku-select"></select>
+          </div>
+          <div class="mapping-row">
+            <label>數量欄位：</label>
+            <select id="mapping-qty-select"></select>
+          </div>
+          <div class="preview-table-wrapper">
+            <table class="preview-table" id="order-preview-table">
+              <thead><tr id="preview-header"></tr></thead>
+              <tbody id="preview-body"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" id="order-import-cancel">取消</button>

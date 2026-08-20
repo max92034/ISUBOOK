@@ -13,8 +13,8 @@ const WEEKS_IN_YEAR = 52;
 const WARN_WEEKS = 4;
 const FOUR_MONTHS = 17;
 
-const SKU_COLS = ['sku', 'item', 'item code', 'item_code', 'item no', 'product', 'product code', '型號', '產品編號', '品號', '編號'];
-const QTY_COLS = ['quantity', 'qty', 'quantity ordered', 'order quantity', 'order qty', '數量', '訂購數量', '訂單數量', 'amount'];
+const SKU_COLS = ['sku', 'item', 'item code', 'item_code', 'item no', 'item number', 'product', 'product code', 'product id', 'model', 'model no', '型號', '產品編號', '品號', '編號', '商品編號', '貨號'];
+const QTY_COLS = ['quantity', 'qty', 'quantity ordered', 'order quantity', 'order qty', '數量', '訂購數量', '訂單數量', 'amount', 'count', '訂購量'];
 
 // ===== State =====
 const state = {
@@ -38,6 +38,10 @@ const state = {
   orderItems: [],
   orderAnalysis: [],
   orderFileName: '',
+  orderRawRows: [],
+  orderHeaders: [],
+  orderDetectedSkuCol: 0,
+  orderDetectedQtyCol: 1,
 };
 
 // ===== Utility =====
@@ -1176,6 +1180,7 @@ function setupEventListeners() {
     } else {
       document.getElementById('order-import-modal').style.display = 'flex';
       document.getElementById('order-import-result').innerHTML = '';
+      document.getElementById('order-mapping-section').style.display = 'none';
       document.getElementById('order-import-confirm').disabled = true;
       state.selectedOrderFile = null;
     }
@@ -1185,6 +1190,7 @@ function setupEventListeners() {
   document.getElementById('order-reimport').addEventListener('click', () => {
     document.getElementById('order-import-modal').style.display = 'flex';
     document.getElementById('order-import-result').innerHTML = '';
+    document.getElementById('order-mapping-section').style.display = 'none';
     document.getElementById('order-import-confirm').disabled = true;
     state.selectedOrderFile = null;
   });
@@ -1360,19 +1366,73 @@ async function handleImportConfirm() {
 }
 
 // ===== Order Analysis =====
-function detectColumns(headers) {
+function detectColumns(headers, sampleRows) {
   let skuCol = -1, qtyCol = -1;
+
+  // Phase 1: Match by header name
   for (let i = 0; i < headers.length; i++) {
     const h = headers[i].trim().toLowerCase();
     if (skuCol === -1 && SKU_COLS.includes(h)) skuCol = i;
     if (qtyCol === -1 && QTY_COLS.includes(h)) qtyCol = i;
   }
+
+  // Phase 2: If SKU column not found by name, use smart detection on sample data
+  if (skuCol === -1 && sampleRows.length > 0) {
+    let bestCol = 0;
+    let bestScore = -1;
+    for (let c = 0; c < headers.length; c++) {
+      let score = 0;
+      for (const row of sampleRows) {
+        const val = safeStr(row[c]);
+        if (!val) continue;
+        // SKU-like: short alphanumeric code (e.g., WU78157AA, 5-20 chars, mostly alphanumeric)
+        if (val.length <= 25 && /^[A-Za-z0-9\-_]+$/.test(val) && /[A-Za-z]/.test(val) && /[0-9]/.test(val)) {
+          score += 2;
+        }
+        // Product-name-like: long text with spaces
+        else if (val.length > 25 || (val.includes(' ') && val.split(' ').length > 3)) {
+          score -= 1;
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestCol = c;
+      }
+    }
+    skuCol = bestCol;
+  }
+
+  // Phase 3: If Qty column not found by name, find the column with most numeric values
+  if (qtyCol === -1 && sampleRows.length > 0) {
+    let bestCol = -1;
+    let bestCount = 0;
+    for (let c = 0; c < headers.length; c++) {
+      if (c === skuCol) continue;
+      let count = 0;
+      for (const row of sampleRows) {
+        const val = safeNum(row[c]);
+        if (val > 0) count++;
+      }
+      if (count > bestCount) {
+        bestCount = count;
+        bestCol = c;
+      }
+    }
+    qtyCol = bestCol >= 0 ? bestCol : (skuCol === 0 ? 1 : 0);
+  }
+
   if (skuCol === -1) skuCol = 0;
-  if (qtyCol === -1) qtyCol = 1;
-  return { skuCol, qtyCol, hasHeader: skuCol !== 0 || qtyCol !== 1 || headers.some(h => SKU_COLS.includes(h.trim().toLowerCase()) || QTY_COLS.includes(h.trim().toLowerCase())) };
+  if (qtyCol === -1) qtyCol = skuCol === 0 ? 1 : 0;
+
+  const hasHeader = headers.some(h => {
+    const hl = h.trim().toLowerCase();
+    return SKU_COLS.includes(hl) || QTY_COLS.includes(hl);
+  }) || headers.some(h => h.trim().length > 0);
+
+  return { skuCol, qtyCol, hasHeader };
 }
 
-function parseOrderExcel(workbook) {
+function parseOrderExcelRaw(workbook) {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
   const range = XLSX.utils.decode_range(ws['!ref']);
 
@@ -1380,36 +1440,53 @@ function parseOrderExcel(workbook) {
   for (let c = 0; c <= range.e.c; c++) {
     headers.push(safeStr(getCellValue(ws, 0, c)));
   }
-  const { skuCol, qtyCol, hasHeader } = detectColumns(headers);
 
+  const allRows = [];
+  for (let r = 0; r <= range.e.r; r++) {
+    const row = [];
+    for (let c = 0; c <= range.e.c; c++) {
+      row.push(getCellValue(ws, r, c));
+    }
+    allRows.push(row);
+  }
+
+  return { headers, rows: allRows };
+}
+
+function parseOrderCSVRaw(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return { headers: [], rows: [] };
+
+  const allRows = lines.map(l => parseCSVLine(l));
+  const headers = allRows[0].map(c => safeStr(c));
+  return { headers, rows: allRows };
+}
+
+function extractOrderItems(headers, rows, skuCol, qtyCol, hasHeader) {
   const items = [];
   const startRow = hasHeader ? 1 : 0;
-  for (let r = startRow; r <= range.e.r; r++) {
-    const sku = safeStr(getCellValue(ws, r, skuCol));
-    const qty = safeNum(getCellValue(ws, r, qtyCol));
+  for (let r = startRow; r < rows.length; r++) {
+    const sku = safeStr(rows[r][skuCol]);
+    const qty = safeNum(rows[r][qtyCol]);
     if (!sku || sku.length < 2 || qty <= 0) continue;
     items.push({ sku, quantity: qty });
   }
   return items;
 }
 
+// Legacy compatibility (used by old code paths)
+function parseOrderExcel(workbook) {
+  const { headers, rows } = parseOrderExcelRaw(workbook);
+  const sampleRows = rows.slice(1, 6);
+  const { skuCol, qtyCol, hasHeader } = detectColumns(headers, sampleRows);
+  return extractOrderItems(headers, rows, skuCol, qtyCol, hasHeader);
+}
+
 function parseOrderCSV(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (!lines.length) return [];
-
-  const firstRow = parseCSVLine(lines[0]).map(c => c.trim());
-  const { skuCol, qtyCol, hasHeader } = detectColumns(firstRow);
-
-  const items = [];
-  const startLine = hasHeader ? 1 : 0;
-  for (let i = startLine; i < lines.length; i++) {
-    const cols = parseCSVLine(lines[i]);
-    const sku = (cols[skuCol] || '').trim();
-    const qty = safeNum(cols[qtyCol]);
-    if (!sku || sku.length < 2 || qty <= 0) continue;
-    items.push({ sku, quantity: qty });
-  }
-  return items;
+  const { headers, rows } = parseOrderCSVRaw(text);
+  const sampleRows = rows.slice(1, 6);
+  const { skuCol, qtyCol, hasHeader } = detectColumns(headers, sampleRows);
+  return extractOrderItems(headers, rows, skuCol, qtyCol, hasHeader);
 }
 
 function aggregateOrders(items) {
@@ -1606,7 +1683,92 @@ async function handleOrderFileSelect(file) {
   state.selectedOrderFile = file;
   document.getElementById('order-import-result').innerHTML =
     `<div class="info-box">已選擇: <strong>${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)</div>`;
-  document.getElementById('order-import-confirm').disabled = false;
+  document.getElementById('order-mapping-section').style.display = 'none';
+  document.getElementById('order-import-confirm').disabled = true;
+
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    let raw;
+
+    if (ext === 'csv') {
+      const text = await file.text();
+      raw = parseOrderCSVRaw(text);
+    } else {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      raw = parseOrderExcelRaw(workbook);
+    }
+
+    if (!raw.rows.length) {
+      document.getElementById('order-import-result').innerHTML =
+        '<div class="import-result error">❌ 檔案中沒有資料</div>';
+      return;
+    }
+
+    state.orderHeaders = raw.headers;
+    state.orderRawRows = raw.rows;
+
+    const sampleRows = raw.rows.slice(1, 6);
+    const { skuCol, qtyCol, hasHeader } = detectColumns(raw.headers, sampleRows);
+    state.orderDetectedSkuCol = skuCol;
+    state.orderDetectedQtyCol = qtyCol;
+
+    renderOrderMappingPreview(raw.headers, raw.rows, skuCol, qtyCol, hasHeader);
+    document.getElementById('order-mapping-section').style.display = 'block';
+    document.getElementById('order-import-confirm').disabled = false;
+  } catch (e) {
+    document.getElementById('order-import-result').innerHTML =
+      `<div class="import-result error">❌ 解析失敗: ${e.message}</div>`;
+  }
+}
+
+function renderOrderMappingPreview(headers, rows, skuCol, qtyCol, hasHeader) {
+  const skuSelect = document.getElementById('mapping-sku-select');
+  const qtySelect = document.getElementById('mapping-qty-select');
+
+  const options = headers.map((h, i) => {
+    const sampleVal = rows[1] ? safeStr(rows[1][i]) : '';
+    const label = h ? `${h}` : `欄位 ${i + 1}`;
+    return `<option value="${i}">${label} (例: ${sampleVal.slice(0, 30)})</option>`;
+  }).join('');
+
+  skuSelect.innerHTML = options;
+  qtySelect.innerHTML = options;
+  skuSelect.value = skuCol;
+  qtySelect.value = qtyCol;
+
+  skuSelect.onchange = () => updatePreviewTable();
+  qtySelect.onchange = () => updatePreviewTable();
+
+  updatePreviewTable();
+}
+
+function updatePreviewTable() {
+  const skuCol = parseInt(document.getElementById('mapping-sku-select').value);
+  const qtyCol = parseInt(document.getElementById('mapping-qty-select').value);
+  const headers = state.orderHeaders;
+  const rows = state.orderRawRows;
+
+  const headerRow = document.getElementById('preview-header');
+  headerRow.innerHTML = headers.map((h, i) => {
+    let cls = '';
+    if (i === skuCol) cls = 'preview-col-sku';
+    if (i === qtyCol) cls = 'preview-col-qty';
+    return `<th class="${cls}">${h || `欄位 ${i + 1}`}</th>`;
+  }).join('');
+
+  const body = document.getElementById('preview-body');
+  const startRow = 1;
+  const previewRows = rows.slice(startRow, startRow + 5);
+  body.innerHTML = previewRows.map(row =>
+    `<tr>${headers.map((_, i) => {
+      let cls = '';
+      if (i === skuCol) cls = 'preview-col-sku';
+      if (i === qtyCol) cls = 'preview-col-qty';
+      const val = safeStr(row[i]);
+      return `<td class="${cls}">${val.slice(0, 40)}</td>`;
+    }).join('')}</tr>`
+  ).join('');
 }
 
 function closeOrderImportModal() {
@@ -1623,22 +1785,16 @@ async function handleOrderImportConfirm() {
     '<div class="info-box">正在解析訂單檔案...</div>';
 
   try {
-    const file = state.selectedOrderFile;
-    const ext = file.name.split('.').pop().toLowerCase();
-    let items;
+    const skuCol = parseInt(document.getElementById('mapping-sku-select').value);
+    const qtyCol = parseInt(document.getElementById('mapping-qty-select').value);
 
-    if (ext === 'csv') {
-      const text = await file.text();
-      items = parseOrderCSV(text);
-    } else {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
-      items = parseOrderExcel(workbook);
-    }
+    const items = extractOrderItems(
+      state.orderHeaders, state.orderRawRows, skuCol, qtyCol, true
+    );
 
     if (!items.length) {
       document.getElementById('order-import-result').innerHTML =
-        '<div class="import-result error">❌ 未找到有效訂單資料</div>';
+        '<div class="import-result error">❌ 未找到有效訂單資料，請確認欄位對應是否正確</div>';
       btn.disabled = false;
       btn.textContent = '確認匯入';
       return;
@@ -1652,7 +1808,7 @@ async function handleOrderImportConfirm() {
         `<div class="import-result error">
           ⚠️ 偵測到 ${largeQtyItems.length} 項數量異常大（超過 10 萬）：<br>
           ${sample}${largeQtyItems.length > 3 ? '...' : ''}<br>
-          請確認檔案欄位是否正確（SKU 和 Quantity），或確認數值是否無誤。
+          請確認數量欄位是否選擇正確。
         </div>`;
       btn.disabled = false;
       btn.textContent = '確認匯入';
@@ -1666,17 +1822,17 @@ async function handleOrderImportConfirm() {
         `<div class="import-result error">
           ⚠️ SKU 值似乎不是產品編號，而是完整產品名稱。<br>
           偵測到 ${longSkuItems.length}/${items.length} 項 SKU 長度超過 30 字元。<br>
-          請確認檔案中的 SKU 欄位包含的是產品編號（如 WU78157AA），而非產品名稱。
+          請確認 SKU 欄位是否選擇正確（應為 WU78157AA 等短編號）。
         </div>`;
       btn.disabled = false;
       btn.textContent = '確認匯入';
       return;
     }
 
-    items = aggregateOrders(items);
-    state.orderItems = items;
-    state.orderFileName = file.name;
-    state.orderAnalysis = analyzeOrders(items);
+    const aggregated = aggregateOrders(items);
+    state.orderItems = aggregated;
+    state.orderFileName = state.selectedOrderFile.name;
+    state.orderAnalysis = analyzeOrders(aggregated);
 
     const produce = state.orderAnalysis.filter(a => a.status === 'produce').length;
     const ship = state.orderAnalysis.filter(a => a.status === 'ship').length;
@@ -1685,7 +1841,7 @@ async function handleOrderImportConfirm() {
 
     document.getElementById('order-import-result').innerHTML =
       `<div class="import-result success">
-        <div class="stat"><span>總項目</span><strong>${items.length}</strong></div>
+        <div class="stat"><span>總項目</span><strong>${aggregated.length}</strong></div>
         <div class="stat"><span>安全</span><strong>${safe}</strong></div>
         <div class="stat"><span>需出貨</span><strong>${ship}</strong></div>
         <div class="stat"><span>需生產</span><strong>${produce}</strong></div>
