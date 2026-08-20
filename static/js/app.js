@@ -13,6 +13,9 @@ const WEEKS_IN_YEAR = 52;
 const WARN_WEEKS = 4;
 const FOUR_MONTHS = 17;
 
+const SKU_COLS = ['sku', 'item', 'item code', 'item_code', 'item no', 'product', 'product code', '型號', '產品編號', '品號', '編號'];
+const QTY_COLS = ['quantity', 'qty', 'quantity ordered', 'order quantity', 'order qty', '數量', '訂購數量', '訂單數量', 'amount'];
+
 // ===== State =====
 const state = {
   products: [],
@@ -30,7 +33,11 @@ const state = {
   prodFilter: '',
   searchQuery: '',
   selectedFile: null,
+  selectedOrderFile: null,
   charts: {},
+  orderItems: [],
+  orderAnalysis: [],
+  orderFileName: '',
 };
 
 // ===== Utility =====
@@ -1159,6 +1166,48 @@ function setupEventListeners() {
     Object.values(LS_KEYS).forEach(k => localStorage.removeItem(k));
     location.reload();
   });
+
+  // ===== Order Analysis =====
+  document.getElementById('order-btn').addEventListener('click', () => {
+    if (!hasData()) { alert('請先上傳 USI 總檔初始化資料'); return; }
+    if (state.orderAnalysis.length > 0) {
+      showOrderView();
+      renderOrderAnalysis();
+    } else {
+      document.getElementById('order-import-modal').style.display = 'flex';
+      document.getElementById('order-import-result').innerHTML = '';
+      document.getElementById('order-import-confirm').disabled = true;
+      state.selectedOrderFile = null;
+    }
+  });
+
+  document.getElementById('order-back').addEventListener('click', showDashboardView);
+  document.getElementById('order-reimport').addEventListener('click', () => {
+    document.getElementById('order-import-modal').style.display = 'flex';
+    document.getElementById('order-import-result').innerHTML = '';
+    document.getElementById('order-import-confirm').disabled = true;
+    state.selectedOrderFile = null;
+  });
+
+  document.getElementById('order-import-close').addEventListener('click', closeOrderImportModal);
+  document.getElementById('order-import-cancel').addEventListener('click', closeOrderImportModal);
+
+  const orderDropZone = document.getElementById('order-drop-zone');
+  const orderFileInput = document.getElementById('order-file-input');
+
+  orderDropZone.addEventListener('click', () => orderFileInput.click());
+  orderDropZone.addEventListener('dragover', (e) => { e.preventDefault(); orderDropZone.classList.add('dragover'); });
+  orderDropZone.addEventListener('dragleave', () => orderDropZone.classList.remove('dragover'));
+  orderDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    orderDropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleOrderFileSelect(e.dataTransfer.files[0]);
+  });
+  orderFileInput.addEventListener('change', (e) => {
+    if (e.target.files.length) handleOrderFileSelect(e.target.files[0]);
+  });
+
+  document.getElementById('order-import-confirm').addEventListener('click', handleOrderImportConfirm);
 }
 
 function updateDataStatus() {
@@ -1269,6 +1318,326 @@ async function handleImportConfirm() {
     }, 2000);
   } catch (e) {
     document.getElementById('import-result').innerHTML =
+      `<div class="import-result error">❌ 匯入失敗: ${e.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = '確認匯入';
+  }
+}
+
+// ===== Order Analysis =====
+function detectColumns(headers) {
+  let skuCol = -1, qtyCol = -1;
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i].trim().toLowerCase();
+    if (skuCol === -1 && SKU_COLS.includes(h)) skuCol = i;
+    if (qtyCol === -1 && QTY_COLS.includes(h)) qtyCol = i;
+  }
+  if (skuCol === -1) skuCol = 0;
+  if (qtyCol === -1) qtyCol = 1;
+  return { skuCol, qtyCol, hasHeader: skuCol !== 0 || qtyCol !== 1 || headers.some(h => SKU_COLS.includes(h.trim().toLowerCase()) || QTY_COLS.includes(h.trim().toLowerCase())) };
+}
+
+function parseOrderExcel(workbook) {
+  const ws = workbook.Sheets[workbook.SheetNames[0]];
+  const range = XLSX.utils.decode_range(ws['!ref']);
+
+  const headers = [];
+  for (let c = 0; c <= range.e.c; c++) {
+    headers.push(safeStr(getCellValue(ws, 0, c)));
+  }
+  const { skuCol, qtyCol, hasHeader } = detectColumns(headers);
+
+  const items = [];
+  const startRow = hasHeader ? 1 : 0;
+  for (let r = startRow; r <= range.e.r; r++) {
+    const sku = safeStr(getCellValue(ws, r, skuCol));
+    const qty = safeNum(getCellValue(ws, r, qtyCol));
+    if (!sku || sku.length < 2 || qty <= 0) continue;
+    items.push({ sku, quantity: qty });
+  }
+  return items;
+}
+
+function parseOrderCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return [];
+
+  const firstRow = parseCSVLine(lines[0]).map(c => c.trim());
+  const { skuCol, qtyCol, hasHeader } = detectColumns(firstRow);
+
+  const items = [];
+  const startLine = hasHeader ? 1 : 0;
+  for (let i = startLine; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    const sku = (cols[skuCol] || '').trim();
+    const qty = safeNum(cols[qtyCol]);
+    if (!sku || sku.length < 2 || qty <= 0) continue;
+    items.push({ sku, quantity: qty });
+  }
+  return items;
+}
+
+function aggregateOrders(items) {
+  const map = {};
+  const order = [];
+  for (const item of items) {
+    if (map[item.sku]) {
+      map[item.sku].quantity += item.quantity;
+    } else {
+      map[item.sku] = { sku: item.sku, quantity: item.quantity };
+      order.push(map[item.sku]);
+    }
+  }
+  return order;
+}
+
+function analyzeOrders(orderItems) {
+  const invMap = {};
+  for (const inv of state.inventory) {
+    invMap[inv.item_code] = inv;
+  }
+  const prodMap = {};
+  for (const p of state.products) {
+    prodMap[p.item_code] = p;
+  }
+
+  return orderItems.map(item => {
+    const inv = invMap[item.sku];
+    const prod = prodMap[item.sku];
+
+    if (!prod) {
+      return {
+        ...item,
+        status: 'not_found',
+        name: '',
+        english_name: '',
+        g: 0, h: 0, i: 0, j: 0,
+        newJ: 0,
+        total_produced: 0,
+        huiyang_inv: 0, indonesia_inv: 0, myanmar_inv: 0,
+        shortage: 0,
+      };
+    }
+
+    const g = safeNum(inv?.g_inventory);
+    const h = safeNum(inv?.h_orders);
+    const i = safeNum(inv?.i_intransit);
+    const j = Math.round((g - h + i) * 10) / 10;
+    const newJ = Math.round((j - item.quantity) * 10) / 10;
+    const totalProduced = safeNum(prod.total_produced);
+    const huiyang = safeNum(prod.huiyang_inv);
+    const indonesia = safeNum(prod.indonesia_inv);
+    const myanmar = safeNum(prod.myanmar_inv);
+
+    let status, shortage = 0;
+    if (newJ >= 0) {
+      status = 'safe';
+    } else if (totalProduced >= Math.abs(newJ)) {
+      status = 'ship';
+      shortage = Math.abs(newJ);
+    } else {
+      status = 'produce';
+      shortage = Math.round((Math.abs(newJ) - totalProduced) * 10) / 10;
+    }
+
+    return {
+      ...item,
+      status,
+      name: prod.name || '',
+      english_name: prod.english_name || '',
+      g, h, i, j, newJ,
+      total_produced: totalProduced,
+      huiyang_inv: huiyang,
+      indonesia_inv: indonesia,
+      myanmar_inv: myanmar,
+      shortage,
+    };
+  });
+}
+
+function renderOrderAnalysis() {
+  const analysis = state.orderAnalysis;
+  const safe = analysis.filter(a => a.status === 'safe');
+  const ship = analysis.filter(a => a.status === 'ship');
+  const produce = analysis.filter(a => a.status === 'produce');
+  const notFound = analysis.filter(a => a.status === 'not_found');
+
+  document.getElementById('order-file-info').textContent =
+    `${state.orderFileName} | ${analysis.length} 項 | ${new Date().toISOString().slice(0, 10)}`;
+
+  document.getElementById('order-summary').innerHTML = `
+    <div class="order-summary-bar">
+      <div class="order-summary-item"><span class="order-dot dot-green"></span> 安全: <strong>${safe.length}</strong></div>
+      <div class="order-summary-item"><span class="order-dot dot-blue"></span> 需出貨: <strong>${ship.length}</strong></div>
+      <div class="order-summary-item"><span class="order-dot dot-red"></span> 需生產: <strong>${produce.length}</strong></div>
+      ${notFound.length > 0 ? `<div class="order-summary-item"><span class="order-dot dot-gray"></span> 找不到: <strong>${notFound.length}</strong></div>` : ''}
+    </div>
+  `;
+
+  renderOrderCard('produce-list', produce, 'produce');
+  renderOrderCard('ship-list', ship, 'ship');
+  document.getElementById('produce-list-count').textContent = produce.length;
+  document.getElementById('ship-list-count').textContent = ship.length;
+
+  const nfEl = document.getElementById('order-not-found');
+  if (notFound.length > 0) {
+    nfEl.style.display = 'block';
+    document.getElementById('not-found-count').textContent = notFound.length;
+    document.getElementById('not-found-list').innerHTML = notFound.map(a =>
+      `<span class="not-found-tag">${a.sku} (${fmt(a.quantity)})</span>`
+    ).join('');
+  } else {
+    nfEl.style.display = 'none';
+  }
+
+  renderOrderTable(analysis);
+}
+
+function renderOrderCard(elId, items, type) {
+  const el = document.getElementById(elId);
+  if (!items.length) {
+    el.innerHTML = '<p class="order-card-empty">無項目</p>';
+    return;
+  }
+  el.innerHTML = items.map(a => {
+    const arrow = a.j >= 0 ? `${fmt(a.j)}` : `${fmtSigned(a.j)}`;
+    const newJClass = a.newJ < 0 ? 'neg' : '';
+    const shortageLabel = type === 'produce' ? '需生產' : '可出貨';
+    return `
+      <div class="order-item" onclick="showDetail('${a.sku}')" style="cursor:pointer">
+        <div class="order-item-sku">${a.sku}</div>
+        <div class="order-item-name">${a.name || a.english_name || ''}</div>
+        <div class="order-item-nums">
+          <span>訂單: <strong>${fmt(a.quantity)}</strong></span>
+          <span>結餘: ${arrow} → <strong class="${newJClass}">${fmtSigned(a.newJ)}</strong></span>
+        </div>
+        <div class="order-item-nums">
+          <span>廠庫: ${fmt(a.total_produced)}</span>
+          <span class="${type === 'produce' ? 'neg' : 'pos'}">${shortageLabel}: ${fmt(a.shortage)}</span>
+        </div>
+        ${a.huiyang_inv || a.indonesia_inv || a.myanmar_inv ? `
+        <div class="order-item-factory">
+          ${a.huiyang_inv ? `惠陽:${fmt(a.huiyang_inv)}` : ''} ${a.indonesia_inv ? `印尼:${fmt(a.indonesia_inv)}` : ''} ${a.myanmar_inv ? `緬甸:${fmt(a.myanmar_inv)}` : ''}
+        </div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderOrderTable(analysis) {
+  const tbody = document.getElementById('order-tbody');
+  tbody.innerHTML = analysis.map(a => {
+    let badge = '';
+    if (a.status === 'safe') badge = '<span class="status-badge status-green">✓</span>';
+    else if (a.status === 'ship') badge = '<span class="status-badge status-yellow">出</span>';
+    else if (a.status === 'produce') badge = '<span class="status-badge status-red">產</span>';
+    else badge = '<span class="status-badge" style="background:#eee;color:#999">?</span>';
+
+    return `
+      <tr onclick="showDetail('${a.sku}')" style="cursor:pointer">
+        <td>${badge}</td>
+        <td><strong>${a.sku}</strong></td>
+        <td>${a.name || '-'}</td>
+        <td class="num">${fmt(a.quantity)}</td>
+        <td class="num ${valClass(a.j)}">${fmtSigned(a.j)}</td>
+        <td class="num ${valClass(a.newJ)}"><strong>${fmtSigned(a.newJ)}</strong></td>
+        <td class="num">${fmt(a.total_produced)}</td>
+        <td class="num">${fmt(a.huiyang_inv)}</td>
+        <td class="num">${fmt(a.indonesia_inv)}</td>
+        <td class="num">${fmt(a.myanmar_inv)}</td>
+        <td class="num ${a.shortage > 0 ? 'neg' : ''}">${a.shortage > 0 ? fmt(a.shortage) : '-'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  if (!analysis.length) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--color-text-sub)">無訂單資料</td></tr>';
+  }
+}
+
+function showOrderView() {
+  document.querySelectorAll('.kpi-grid, .container-section, .changes-section, .product-section, .sales-section')
+    .forEach(el => el.style.display = 'none');
+  document.getElementById('order-view').style.display = 'block';
+}
+
+function showDashboardView() {
+  document.getElementById('order-view').style.display = 'none';
+  document.querySelectorAll('.kpi-grid, .container-section, .changes-section, .product-section, .sales-section')
+    .forEach(el => el.style.display = '');
+}
+
+async function handleOrderFileSelect(file) {
+  state.selectedOrderFile = file;
+  document.getElementById('order-import-result').innerHTML =
+    `<div class="info-box">已選擇: <strong>${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)</div>`;
+  document.getElementById('order-import-confirm').disabled = false;
+}
+
+function closeOrderImportModal() {
+  document.getElementById('order-import-modal').style.display = 'none';
+  state.selectedOrderFile = null;
+}
+
+async function handleOrderImportConfirm() {
+  if (!state.selectedOrderFile) return;
+  const btn = document.getElementById('order-import-confirm');
+  btn.disabled = true;
+  btn.textContent = '解析中...';
+  document.getElementById('order-import-result').innerHTML =
+    '<div class="info-box">正在解析訂單檔案...</div>';
+
+  try {
+    const file = state.selectedOrderFile;
+    const ext = file.name.split('.').pop().toLowerCase();
+    let items;
+
+    if (ext === 'csv') {
+      const text = await file.text();
+      items = parseOrderCSV(text);
+    } else {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      items = parseOrderExcel(workbook);
+    }
+
+    if (!items.length) {
+      document.getElementById('order-import-result').innerHTML =
+        '<div class="import-result error">❌ 未找到有效訂單資料</div>';
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      return;
+    }
+
+    items = aggregateOrders(items);
+    state.orderItems = items;
+    state.orderFileName = file.name;
+    state.orderAnalysis = analyzeOrders(items);
+
+    const produce = state.orderAnalysis.filter(a => a.status === 'produce').length;
+    const ship = state.orderAnalysis.filter(a => a.status === 'ship').length;
+    const safe = state.orderAnalysis.filter(a => a.status === 'safe').length;
+    const nf = state.orderAnalysis.filter(a => a.status === 'not_found').length;
+
+    document.getElementById('order-import-result').innerHTML =
+      `<div class="import-result success">
+        <div class="stat"><span>總項目</span><strong>${items.length}</strong></div>
+        <div class="stat"><span>安全</span><strong>${safe}</strong></div>
+        <div class="stat"><span>需出貨</span><strong>${ship}</strong></div>
+        <div class="stat"><span>需生產</span><strong>${produce}</strong></div>
+        ${nf > 0 ? `<div class="stat"><span>找不到</span><strong>${nf}</strong></div>` : ''}
+      </div>
+      <p style="margin-top:12px;color:var(--color-green)">✓ 解析完成！正在載入分析...</p>`;
+    btn.textContent = '完成';
+    setTimeout(() => {
+      closeOrderImportModal();
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      showOrderView();
+      renderOrderAnalysis();
+    }, 1500);
+  } catch (e) {
+    document.getElementById('order-import-result').innerHTML =
       `<div class="import-result error">❌ 匯入失敗: ${e.message}</div>`;
     btn.disabled = false;
     btn.textContent = '確認匯入';

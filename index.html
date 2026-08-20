@@ -51,6 +51,7 @@
         <span class="nav-update" id="last-update">載入中...</span>
         <button class="btn btn-primary" id="import-btn">📥 匯入週資料</button>
         <button class="btn btn-outline" id="export-btn">📊 匯出 CSV</button>
+        <button class="btn btn-outline" id="order-btn">📋 訂單分析</button>
         <button class="btn btn-outline" id="data-btn">💾 資料管理</button>
       </div>
     </nav>
@@ -163,6 +164,64 @@
           </div>
         </div>
       </section>
+
+      <!-- Order Analysis View -->
+      <section class="order-view" id="order-view" style="display:none">
+        <div class="order-header">
+          <button class="btn btn-outline" id="order-back">← 返回儀表板</button>
+          <h2 class="section-title">📋 訂單分析結果</h2>
+          <div class="order-file-info" id="order-file-info"></div>
+          <button class="btn btn-primary" id="order-reimport">📋 重新匯入訂單</button>
+        </div>
+
+        <div class="order-summary" id="order-summary"></div>
+
+        <div class="order-cards">
+          <div class="order-card order-card-produce">
+            <div class="order-card-header">
+              <span>🏭 需要生產</span>
+              <span class="order-card-count" id="produce-list-count">0</span>
+            </div>
+            <div class="order-card-body" id="produce-list"></div>
+          </div>
+          <div class="order-card order-card-ship">
+            <div class="order-card-header">
+              <span>📦 需要出貨</span>
+              <span class="order-card-count" id="ship-list-count">0</span>
+            </div>
+            <div class="order-card-body" id="ship-list"></div>
+          </div>
+        </div>
+
+        <div class="order-not-found" id="order-not-found" style="display:none">
+          <h3 class="section-title">⚠️ 找不到的 SKU (<span id="not-found-count">0</span>)</h3>
+          <div id="not-found-list" class="not-found-list"></div>
+        </div>
+
+        <div class="order-table-section">
+          <h3 class="section-title">詳細清單</h3>
+          <div class="table-wrapper" style="max-height:600px">
+            <table class="data-table" id="order-table">
+              <thead>
+                <tr>
+                  <th class="col-status">狀態</th>
+                  <th>SKU</th>
+                  <th>產品名稱</th>
+                  <th class="num">訂單量</th>
+                  <th class="num">當前結餘 J</th>
+                  <th class="num">訂單後結餘</th>
+                  <th class="num">總庫存 Q</th>
+                  <th class="num">惠陽 R</th>
+                  <th class="num">印尼 S</th>
+                  <th class="num">緬甸 T</th>
+                  <th class="num">缺口</th>
+                </tr>
+              </thead>
+              <tbody id="order-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -251,6 +310,38 @@
           <p class="hint">清除瀏覽器中的所有庫存資料，此操作無法復原。</p>
           <button class="btn btn-danger" id="clear-data-btn">清除所有資料</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Import Modal -->
+  <div class="modal-overlay" id="order-import-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📋 匯入客戶訂單</h2>
+        <button class="modal-close" id="order-import-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>上傳客戶訂單 Excel 或 CSV 檔案，系統將自動比對庫存並分析。</p>
+        <div class="info-box">
+          <strong>欄位名稱支援（大小寫不拘）：</strong>
+          <ul>
+            <li>SKU 欄：SKU、Item、Item Code、型號、產品編號、品號</li>
+            <li>數量欄：Quantity、Qty、數量、訂購數量、Amount</li>
+          </ul>
+          <p style="margin-top:4px;font-size:12px">找不到對應欄位時，預設取第一欄為 SKU、第二欄為數量。</p>
+        </div>
+        <div class="drop-zone" id="order-drop-zone">
+          <div class="drop-icon">📋</div>
+          <p>拖曳檔案到此處或<span class="link">點擊選擇</span></p>
+          <p class="drop-hint">支援 .xlsx, .xls, .csv 格式</p>
+          <input type="file" id="order-file-input" accept=".xlsx,.xls,.csv" hidden>
+        </div>
+        <div id="order-import-result" class="import-result"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="order-import-cancel">取消</button>
+        <button class="btn btn-primary" id="order-import-confirm" disabled>確認匯入</button>
       </div>
     </div>
   </div>
