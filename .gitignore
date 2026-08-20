@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+test_*
+check_*
+
+# === 公司資料 - 絕對不推上 GitHub ===
+data/*.csv
+data/*.json
+data/snapshots/
+*.xls
+*.xlsx
+*.xlsm
