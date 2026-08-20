@@ -1542,6 +1542,9 @@ function analyzeOrders(orderItems) {
     discNameMap[d.item_code] = d.english_name || '';
   }
 
+  const weeksElapsed = getWeeksElapsed();
+  const sales2025Year = 2025;
+
   return orderItems.map(item => {
     const inv = invMap[item.sku];
     const prod = prodMap[item.sku];
@@ -1551,6 +1554,7 @@ function analyzeOrders(orderItems) {
       return {
         ...item,
         status: 'not_found',
+        prod_status: 'none',
         name: '',
         english_name: discNameMap[item.sku] || '',
         discontinued: isDiscontinued,
@@ -1559,6 +1563,7 @@ function analyzeOrders(orderItems) {
         total_produced: 0,
         huiyang_inv: 0, indonesia_inv: 0, myanmar_inv: 0,
         shortage: 0,
+        weekly_rate_w: 0, weeks_left_w: null,
       };
     }
 
@@ -1571,7 +1576,25 @@ function analyzeOrders(orderItems) {
     const huiyang = safeNum(prod.huiyang_inv);
     const indonesia = safeNum(prod.indonesia_inv);
     const myanmar = safeNum(prod.myanmar_inv);
+    const sales2025 = safeNum(prod.sales_2025);
 
+    const weeklyRateW = sales2025 > 0 && weeksElapsed > 0
+      ? Math.round((sales2025 / weeksElapsed) * 10) / 10 : 0;
+    const weeksLeftW = weeklyRateW > 0 ? Math.round((j / weeklyRateW) * 10) / 10 : null;
+
+    // Production status from main dashboard logic
+    let prodStatus = 'none';
+    if (j < 0 && Math.abs(j) < totalProduced) {
+      prodStatus = 'judge';
+    } else if (weeksLeftW !== null && weeksLeftW <= FOUR_MONTHS) {
+      if (totalProduced < 20) {
+        prodStatus = 'produce';
+      } else if (totalProduced > 0) {
+        prodStatus = 'available';
+      }
+    }
+
+    // Order analysis status
     let status, shortage = 0;
     if (newJ >= 0) {
       status = 'safe';
@@ -1586,6 +1609,7 @@ function analyzeOrders(orderItems) {
     return {
       ...item,
       status,
+      prod_status: prodStatus,
       name: prod.name || '',
       english_name: prod.english_name || '',
       discontinued: isDiscontinued,
@@ -1595,26 +1619,34 @@ function analyzeOrders(orderItems) {
       indonesia_inv: indonesia,
       myanmar_inv: myanmar,
       shortage,
+      weekly_rate_w: weeklyRateW,
+      weeks_left_w: weeksLeftW,
     };
   });
 }
 
 function renderOrderAnalysis() {
   const analysis = state.orderAnalysis;
-  const safe = analysis.filter(a => a.status === 'safe');
   const ship = analysis.filter(a => a.status === 'ship');
   const produce = analysis.filter(a => a.status === 'produce');
   const notFound = analysis.filter(a => a.status === 'not_found');
   const discontinued = analysis.filter(a => a.discontinued);
+
+  // "需注意" = safe from order perspective, but has production status from dashboard
+  const watch = analysis.filter(a =>
+    a.status === 'safe' && a.prod_status && a.prod_status !== 'none'
+  );
+  const safeCount = analysis.filter(a => a.status === 'safe' && (a.prod_status === 'none' || !a.prod_status)).length;
 
   document.getElementById('order-file-info').textContent =
     `${state.orderFileName} | ${analysis.length} 項 | ${new Date().toISOString().slice(0, 10)}`;
 
   document.getElementById('order-summary').innerHTML = `
     <div class="order-summary-bar">
-      <div class="order-summary-item"><span class="order-dot dot-green"></span> 安全: <strong>${safe.length}</strong></div>
+      <div class="order-summary-item"><span class="order-dot dot-green"></span> 安全: <strong>${safeCount}</strong></div>
       <div class="order-summary-item"><span class="order-dot dot-blue"></span> 需出貨: <strong>${ship.length}</strong></div>
       <div class="order-summary-item"><span class="order-dot dot-red"></span> 需生產: <strong>${produce.length}</strong></div>
+      <div class="order-summary-item"><span class="order-dot dot-yellow"></span> 需注意: <strong>${watch.length}</strong></div>
       ${discontinued.length > 0 ? `<div class="order-summary-item"><span class="order-dot dot-orange"></span> 不再銷售: <strong>${discontinued.length}</strong></div>` : ''}
       ${notFound.length > 0 ? `<div class="order-summary-item"><span class="order-dot dot-gray"></span> 找不到: <strong>${notFound.length}</strong></div>` : ''}
     </div>
@@ -1622,8 +1654,10 @@ function renderOrderAnalysis() {
 
   renderOrderCard('produce-list', produce, 'produce');
   renderOrderCard('ship-list', ship, 'ship');
+  renderOrderCard('watch-list', watch, 'watch');
   document.getElementById('produce-list-count').textContent = produce.length;
   document.getElementById('ship-list-count').textContent = ship.length;
+  document.getElementById('watch-list-count').textContent = watch.length;
 
   const nfEl = document.getElementById('order-not-found');
   if (notFound.length > 0) {
@@ -1650,11 +1684,27 @@ function renderOrderCard(elId, items, type) {
   el.innerHTML = items.map(a => {
     const arrow = a.j >= 0 ? `${fmt(a.j)}` : `${fmtSigned(a.j)}`;
     const newJClass = a.newJ < 0 ? 'neg' : '';
-    const shortageLabel = type === 'produce' ? '需生產' : '可出貨';
     const discBadge = a.discontinued ? '<span class="disc-badge" title="此型號已不再銷售">⚠ 不再銷售</span>' : '';
+
+    // Production status tag
+    let prodTag = '';
+    if (a.prod_status === 'judge') prodTag = '<span class="prod-tag prod-judge">需判斷</span>';
+    else if (a.prod_status === 'available') prodTag = '<span class="prod-tag prod-available">有貨可出</span>';
+    else if (a.prod_status === 'produce') prodTag = '<span class="prod-tag prod-produce">需要生產</span>';
+
+    let actionLine = '';
+    if (type === 'produce') {
+      actionLine = `<span class="neg">需生產: ${fmt(a.shortage)}</span>`;
+    } else if (type === 'ship') {
+      actionLine = `<span class="pos">可出貨: ${fmt(a.shortage)}</span>`;
+    } else if (type === 'watch') {
+      const weeksInfo = a.weeks_left_w !== null ? `${fmt(a.weeks_left_w)} 週` : '無數據';
+      actionLine = `<span class="warn">預估 ${weeksInfo} 用完</span>`;
+    }
+
     return `
       <div class="order-item ${a.discontinued ? 'order-item-disc' : ''}" onclick="showDetail('${a.sku}')" style="cursor:pointer">
-        <div class="order-item-sku">${a.sku} ${discBadge}</div>
+        <div class="order-item-sku">${a.sku} ${discBadge} ${prodTag}</div>
         <div class="order-item-name">${a.name || a.english_name || ''}</div>
         <div class="order-item-nums">
           <span>訂單: <strong>${fmt(a.quantity)}</strong></span>
@@ -1662,7 +1712,7 @@ function renderOrderCard(elId, items, type) {
         </div>
         <div class="order-item-nums">
           <span>廠庫: ${fmt(a.total_produced)}</span>
-          <span class="${type === 'produce' ? 'neg' : 'pos'}">${shortageLabel}: ${fmt(a.shortage)}</span>
+          ${actionLine}
         </div>
         ${a.huiyang_inv || a.indonesia_inv || a.myanmar_inv ? `
         <div class="order-item-factory">
@@ -1682,8 +1732,14 @@ function renderOrderTable(analysis) {
     else if (a.status === 'produce') badge = '<span class="status-badge status-red">產</span>';
     else badge = '<span class="status-badge" style="background:#eee;color:#999">?</span>';
 
+    let prodTag = '';
+    if (a.prod_status === 'judge') prodTag = '<span class="prod-tag prod-judge">需判斷</span>';
+    else if (a.prod_status === 'available') prodTag = '<span class="prod-tag prod-available">有貨可出</span>';
+    else if (a.prod_status === 'produce') prodTag = '<span class="prod-tag prod-produce">需要生產</span>';
+
     const discBadge = a.discontinued ? ' <span class="disc-badge" title="此型號已不再銷售">⚠</span>' : '';
     const rowClass = a.discontinued ? ' class="disc-row"' : '';
+    const weeksInfo = a.weeks_left_w !== null ? `${fmt(a.weeks_left_w)}週` : '-';
 
     return `
       <tr onclick="showDetail('${a.sku}')" style="cursor:pointer"${rowClass}>
@@ -1694,16 +1750,15 @@ function renderOrderTable(analysis) {
         <td class="num ${valClass(a.j)}">${fmtSigned(a.j)}</td>
         <td class="num ${valClass(a.newJ)}"><strong>${fmtSigned(a.newJ)}</strong></td>
         <td class="num">${fmt(a.total_produced)}</td>
-        <td class="num">${fmt(a.huiyang_inv)}</td>
-        <td class="num">${fmt(a.indonesia_inv)}</td>
-        <td class="num">${fmt(a.myanmar_inv)}</td>
+        <td>${prodTag || '-'}</td>
+        <td class="num">${weeksInfo}</td>
         <td class="num ${a.shortage > 0 ? 'neg' : ''}">${a.shortage > 0 ? fmt(a.shortage) : '-'}</td>
       </tr>
     `;
   }).join('');
 
   if (!analysis.length) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--color-text-sub)">無訂單資料</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--color-text-sub)">無訂單資料</td></tr>';
   }
 }
 
