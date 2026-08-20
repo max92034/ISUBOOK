@@ -214,13 +214,13 @@
                   <th class="col-status">狀態</th>
                   <th>SKU</th>
                   <th>產品名稱</th>
-                  <th class="num">訂單量</th>
-                  <th class="num">當前結餘 J</th>
-                  <th class="num">訂單後結餘</th>
-                  <th class="num">總庫存 Q</th>
-                  <th>生產狀態</th>
-                  <th class="num">預估用完</th>
-                  <th class="num">缺口</th>
+                  <th class="num sortable" data-sort="quantity">訂單量 <span class="sort-icon"></span></th>
+                  <th class="num sortable" data-sort="j">當前結餘 J <span class="sort-icon"></span></th>
+                  <th class="num sortable" data-sort="newJ">訂單後結餘 <span class="sort-icon"></span></th>
+                  <th class="num sortable" data-sort="total_produced">總庫存 Q <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="prod_status">生產狀態 <span class="sort-icon"></span></th>
+                  <th class="num sortable" data-sort="weeks_left_w">預估用完 <span class="sort-icon"></span></th>
+                  <th class="num sortable" data-sort="shortage">缺口 <span class="sort-icon"></span></th>
                 </tr>
               </thead>
               <tbody id="order-tbody"></tbody>

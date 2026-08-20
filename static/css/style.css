@@ -672,6 +672,23 @@ body {
   border-radius: 4px;
 }
 .btn-icon:hover { background: var(--color-hover); }
+
+/* Sortable table headers */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { background: var(--color-hover); }
+th.sortable .sort-icon {
+  font-size: 11px;
+  opacity: 0.4;
+  margin-left: 2px;
+}
+th.sortable.sort-active {
+  background: var(--color-hover);
+  font-weight: 700;
+}
+th.sortable.sort-active .sort-icon {
+  opacity: 1;
+  color: var(--color-blue);
+}
 .preview-table-wrapper {
   max-height: 250px;
   overflow: auto;

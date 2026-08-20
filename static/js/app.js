@@ -41,6 +41,8 @@ const state = {
   orderAnalysis: [],
   orderFileName: '',
   orderFiles: [],
+  orderSortField: null,
+  orderSortDir: 'desc',
 };
 
 // ===== Utility =====
@@ -1206,6 +1208,12 @@ function setupEventListeners() {
   });
 
   document.getElementById('order-back').addEventListener('click', showDashboardView);
+
+  // Order table sortable headers
+  document.querySelectorAll('#order-table th.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => handleOrderSort(th.dataset.sort));
+  });
   document.getElementById('order-reimport').addEventListener('click', () => {
     document.getElementById('order-import-modal').style.display = 'flex';
     document.getElementById('order-import-result').innerHTML = '';
@@ -1721,8 +1729,32 @@ function renderOrderCard(elId, items, type) {
 }
 
 function renderOrderTable(analysis) {
+  let sorted = [...analysis];
+  if (state.orderSortField) {
+    const field = state.orderSortField;
+    const dir = state.orderSortDir === 'asc' ? 1 : -1;
+    sorted.sort((a, b) => {
+      let va, vb;
+      if (field === 'prod_status') {
+        const order = { produce: 0, ship: 1, judge: 2, available: 3, none: 4 };
+        va = order[a.prod_status] ?? 5;
+        vb = order[b.prod_status] ?? 5;
+      } else if (field === 'weeks_left_w') {
+        va = a.weeks_left_w === null ? -1 : a.weeks_left_w;
+        vb = b.weeks_left_w === null ? -1 : b.weeks_left_w;
+      } else {
+        va = a[field] ?? 0;
+        vb = b[field] ?? 0;
+      }
+      if (typeof va === 'string') return va.localeCompare(vb) * dir;
+      return (va - vb) * dir;
+    });
+  }
+
+  updateOrderSortIcons();
+
   const tbody = document.getElementById('order-tbody');
-  tbody.innerHTML = analysis.map(a => {
+  tbody.innerHTML = sorted.map(a => {
     let badge = '';
     if (a.status === 'safe') badge = '<span class="status-badge status-green">✓</span>';
     else if (a.status === 'ship') badge = '<span class="status-badge status-yellow">出</span>';
@@ -1757,6 +1789,30 @@ function renderOrderTable(analysis) {
   if (!analysis.length) {
     tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--color-text-sub)">無訂單資料</td></tr>';
   }
+}
+
+function updateOrderSortIcons() {
+  document.querySelectorAll('#order-table th.sortable').forEach(th => {
+    const icon = th.querySelector('.sort-icon');
+    if (!icon) return;
+    if (th.dataset.sort === state.orderSortField) {
+      icon.textContent = state.orderSortDir === 'asc' ? '▲' : '▼';
+      th.classList.add('sort-active');
+    } else {
+      icon.textContent = '⇅';
+      th.classList.remove('sort-active');
+    }
+  });
+}
+
+function handleOrderSort(field) {
+  if (state.orderSortField === field) {
+    state.orderSortDir = state.orderSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.orderSortField = field;
+    state.orderSortDir = 'desc';
+  }
+  renderOrderTable(state.orderAnalysis);
 }
 
 function showOrderView() {
