@@ -1297,6 +1297,41 @@ async function handleImportConfirm() {
       return;
     }
 
+    // Validation: detect non-USI files (e.g. customer orders uploaded by mistake)
+    const existingCodes = new Set(state.products.map(p => p.item_code));
+    const sampleItems = Object.keys(importData).slice(0, 50);
+    let matchedCount = 0;
+    let suspiciouslyLarge = 0;
+    for (const code of sampleItems) {
+      if (existingCodes.has(code)) matchedCount++;
+      const vals = importData[code];
+      if (vals.g > 100000 || vals.h > 100000 || vals.i > 100000) suspiciouslyLarge++;
+    }
+    const matchRate = sampleItems.length > 0 ? matchedCount / sampleItems.length : 0;
+
+    if (matchRate < 0.1) {
+      document.getElementById('import-result').innerHTML =
+        `<div class="import-result error">
+          ❌ 此檔案可能不是 USI 週報！<br>
+          偵測到 ${sampleItems.length} 個項目中只有 ${matchedCount} 個符合現有產品編號。<br>
+          如果這是客戶訂單，請使用「📋 訂單分析」功能匯入。
+        </div>`;
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      return;
+    }
+
+    if (suspiciouslyLarge > sampleItems.length * 0.3) {
+      document.getElementById('import-result').innerHTML =
+        `<div class="import-result error">
+          ⚠️ 數值異常大（超過 10 萬），請確認檔案格式是否正確。<br>
+          如果這是客戶訂單，請使用「📋 訂單分析」功能匯入。
+        </div>`;
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      return;
+    }
+
     const result = doWeeklyImport(importData, file.name);
 
     document.getElementById('import-result').innerHTML =
@@ -1604,6 +1639,35 @@ async function handleOrderImportConfirm() {
     if (!items.length) {
       document.getElementById('order-import-result').innerHTML =
         '<div class="import-result error">❌ 未找到有效訂單資料</div>';
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      return;
+    }
+
+    // Validation: warn if quantities are suspiciously large
+    const largeQtyItems = items.filter(it => it.quantity > 100000);
+    if (largeQtyItems.length > 0) {
+      const sample = largeQtyItems.slice(0, 3).map(it => `${it.sku}: ${fmt(it.quantity)}`).join(', ');
+      document.getElementById('order-import-result').innerHTML =
+        `<div class="import-result error">
+          ⚠️ 偵測到 ${largeQtyItems.length} 項數量異常大（超過 10 萬）：<br>
+          ${sample}${largeQtyItems.length > 3 ? '...' : ''}<br>
+          請確認檔案欄位是否正確（SKU 和 Quantity），或確認數值是否無誤。
+        </div>`;
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      return;
+    }
+
+    // Validation: warn if SKU values look like full product names (too long)
+    const longSkuItems = items.filter(it => it.sku.length > 30);
+    if (longSkuItems.length > items.length * 0.3) {
+      document.getElementById('order-import-result').innerHTML =
+        `<div class="import-result error">
+          ⚠️ SKU 值似乎不是產品編號，而是完整產品名稱。<br>
+          偵測到 ${longSkuItems.length}/${items.length} 項 SKU 長度超過 30 字元。<br>
+          請確認檔案中的 SKU 欄位包含的是產品編號（如 WU78157AA），而非產品名稱。
+        </div>`;
       btn.disabled = false;
       btn.textContent = '確認匯入';
       return;
