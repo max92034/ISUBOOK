@@ -200,10 +200,10 @@ function getMergedData() {
     let prodStatus = 'none';
     if (!isDiscontinued && (totalProduced < 40 || runningLow)) {
       prodStatus = 'produce';
-    } else if (!isDiscontinued && (totalProduced < 60 || runningLow)) {
-      prodStatus = 'judge';
     } else if (totalProduced < 50 || runningLow) {
       prodStatus = 'available';
+    } else if (!isDiscontinued && (totalProduced < 60 || runningLow)) {
+      prodStatus = 'judge';
     }
 
     merged.push({
@@ -1830,10 +1830,10 @@ function analyzeOrders(orderItems) {
     let prodStatus = 'none';
     if (!isDiscontinued && (totalProduced < 40 || runningLow)) {
       prodStatus = 'produce';
-    } else if (!isDiscontinued && (totalProduced < 60 || runningLow)) {
-      prodStatus = 'judge';
     } else if (totalProduced < 50 || runningLow) {
       prodStatus = 'available';
+    } else if (!isDiscontinued && (totalProduced < 60 || runningLow)) {
+      prodStatus = 'judge';
     }
 
     // Order analysis status
