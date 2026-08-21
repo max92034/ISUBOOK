@@ -12,7 +12,7 @@ const LS_KEYS = {
 
 const WEEKS_IN_YEAR = 52;
 const WARN_WEEKS = 4;
-const FOUR_MONTHS = 17;
+const FOUR_WEEKS = 4;
 
 const SKU_COLS = ['sku', 'item', 'item code', 'item_code', 'item no', 'item number', 'product', 'product code', 'product id', 'model', 'model no', '型號', '產品編號', '品號', '編號', '商品編號', '貨號'];
 const QTY_COLS = ['quantity', 'qty', 'quantity ordered', 'order quantity', 'order qty', '數量', '訂購數量', '訂單數量', 'amount', 'count', '訂購量'];
@@ -192,15 +192,18 @@ function getMergedData() {
     const indonesiaInv = safeNum(p.indonesia_inv);
     const myanmarInv = safeNum(p.myanmar_inv);
 
+    const isDiscontinued = (p.discontinued || '').trim() !== '';
+    const wLow = weeksLeftW !== null && weeksLeftW < FOUR_WEEKS;
+    const pLow = weeksLeftP !== null && weeksLeftP < FOUR_WEEKS;
+    const runningLow = wLow || pLow;
+
     let prodStatus = 'none';
-    if (j < 0 && Math.abs(j) < totalProduced) {
+    if (!isDiscontinued && (totalProduced < 40 || runningLow)) {
+      prodStatus = 'produce';
+    } else if (!isDiscontinued && (totalProduced < 60 || runningLow)) {
       prodStatus = 'judge';
-    } else if (weeksLeftW !== null && weeksLeftW <= FOUR_MONTHS) {
-      if (totalProduced < 20) {
-        prodStatus = 'produce';
-      } else if (totalProduced > 0) {
-        prodStatus = 'available';
-      }
+    } else if (totalProduced < 50 || runningLow) {
+      prodStatus = 'available';
     }
 
     merged.push({
@@ -841,12 +844,7 @@ function renderDrops() {
 
 function getFiltered() {
   let data = state.mergedData;
-  if (state.statusFilter) {
-    data = data.filter(d => d.status === state.statusFilter);
-  }
-  if (state.prodFilter) {
-    data = data.filter(d => d.prod_status === state.prodFilter);
-  }
+
   if (state.searchQuery) {
     const q = state.searchQuery.toLowerCase();
     data = data.filter(d =>
@@ -854,7 +852,15 @@ function getFiltered() {
       (d.name || '').toLowerCase().includes(q) ||
       (d.english_name || '').toLowerCase().includes(q)
     );
+  } else {
+    if (state.statusFilter) {
+      data = data.filter(d => d.status === state.statusFilter);
+    }
+    if (state.prodFilter) {
+      data = data.filter(d => d.prod_status === state.prodFilter);
+    }
   }
+
   const field = state.sortField;
   const dir = state.sortDir === 'desc' ? -1 : 1;
   data = [...data].sort((a, b) => {
@@ -870,6 +876,12 @@ function renderTable() {
   const start = (state.currentPage - 1) * state.perPage;
   const pageData = data.slice(start, start + state.perPage);
   const tbody = document.getElementById('product-tbody');
+
+  if (state.searchQuery && data.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;padding:24px;color:var(--color-red)">
+      ❌ 找不到型號「${state.searchQuery}」，請確認編號是否正確</td></tr>`;
+    return;
+  }
 
   tbody.innerHTML = pageData.map(d => {
     const weeksW = d.weeks_left_w !== null ? `${d.weeks_left_w} 週` : '無數據';
@@ -1810,15 +1822,18 @@ function analyzeOrders(orderItems) {
     const weeksLeftW = weeklyRateW > 0 ? Math.round((j / weeklyRateW) * 10) / 10 : null;
 
     // Production status from main dashboard logic
+    const isDiscontinued = (p.discontinued || '').trim() !== '';
+    const wLow = weeksLeftW !== null && weeksLeftW < FOUR_WEEKS;
+    const pLow = weeksLeftP !== null && weeksLeftP < FOUR_WEEKS;
+    const runningLow = wLow || pLow;
+
     let prodStatus = 'none';
-    if (j < 0 && Math.abs(j) < totalProduced) {
+    if (!isDiscontinued && (totalProduced < 40 || runningLow)) {
+      prodStatus = 'produce';
+    } else if (!isDiscontinued && (totalProduced < 60 || runningLow)) {
       prodStatus = 'judge';
-    } else if (weeksLeftW !== null && weeksLeftW <= FOUR_MONTHS) {
-      if (totalProduced < 20) {
-        prodStatus = 'produce';
-      } else if (totalProduced > 0) {
-        prodStatus = 'available';
-      }
+    } else if (totalProduced < 50 || runningLow) {
+      prodStatus = 'available';
     }
 
     // Order analysis status
