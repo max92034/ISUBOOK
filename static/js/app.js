@@ -35,6 +35,7 @@ const state = {
   prodFilter: '',
   searchQuery: '',
   selectedFile: null,
+  selectedUSWeeklyFile: null,
   selectedOrderFiles: [],
   charts: {},
   orderItems: [],
@@ -405,6 +406,91 @@ function parseWeeklyExcel(workbook) {
       so = safeNum(getCellValue(ws, r, 4));
       onHand = safeNum(getCellValue(ws, r, 6));
     }
+    importData[item] = { g: onHand, h: so, i: po };
+  }
+  return importData;
+}
+
+function parseUSWeeklyExcel(workbook) {
+  let ws = null;
+  let range = null;
+
+  for (const sheetName of workbook.SheetNames) {
+    const candidate = workbook.Sheets[sheetName];
+    if (!candidate || !candidate['!ref']) continue;
+    const candidateRange = XLSX.utils.decode_range(candidate['!ref']);
+    if (candidateRange.e.c < 0 || candidateRange.e.r < 1) continue;
+
+    let hasData = false;
+    for (let r = 0; r < Math.min(candidateRange.e.r + 1, 20); r++) {
+      const val = safeStr(getCellValue(candidate, r, 0));
+      if (val.length >= 3) { hasData = true; break; }
+    }
+    if (hasData) { ws = candidate; range = candidateRange; break; }
+  }
+  if (!ws) throw new Error('找不到包含資料的工作表');
+
+  const headerRow = [];
+  for (let c = 0; c <= range.e.c; c++) {
+    headerRow.push(safeStr(getCellValue(ws, 0, c)).toLowerCase());
+  }
+
+  let poCol = -1, soCol = -1, onHandCol = -1, itemCol = 0;
+  for (let c = 0; c < headerRow.length; c++) {
+    const h = headerRow[c];
+    if (h.includes('purchase order')) poCol = c;
+    if (h.includes('sales order')) soCol = c;
+    if (h.includes('on hand') || h.includes('onhand')) onHandCol = c;
+    if (h === 'item' || h.includes('item code') || h.includes('sku') || h.includes('型號')) itemCol = c;
+  }
+
+  if (poCol < 0 || soCol < 0 || onHandCol < 0) {
+    throw new Error('找不到 QuickBooks 欄位，請確認檔案格式');
+  }
+
+  const importData = {};
+  for (let r = 1; r <= range.e.r; r++) {
+    const item = safeStr(getCellValue(ws, r, itemCol));
+    if (!item || item.length < 3) continue;
+    if (item.toLowerCase() === 'item' || item.toLowerCase() === 'sku') continue;
+
+    const po = safeNum(getCellValue(ws, r, poCol));
+    const so = safeNum(getCellValue(ws, r, soCol));
+    const onHand = safeNum(getCellValue(ws, r, onHandCol));
+    importData[item] = { g: onHand, h: so, i: po };
+  }
+  return importData;
+}
+
+function parseUSWeeklyCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return {};
+
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+
+  let poCol = -1, soCol = -1, onHandCol = -1, itemCol = 0;
+  for (let c = 0; c < headers.length; c++) {
+    const h = headers[c];
+    if (h.includes('purchase order')) poCol = c;
+    if (h.includes('sales order')) soCol = c;
+    if (h.includes('on hand') || h.includes('onhand')) onHandCol = c;
+    if (h === 'item' || h.includes('item code') || h.includes('sku') || h.includes('型號')) itemCol = c;
+  }
+
+  if (poCol < 0 || soCol < 0 || onHandCol < 0) {
+    throw new Error('找不到 QuickBooks 欄位，請確認檔案格式');
+  }
+
+  const importData = {};
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    const item = (cols[itemCol] || '').trim();
+    if (!item || item.length < 3) continue;
+    if (item.toLowerCase() === 'item' || item.toLowerCase() === 'sku') continue;
+
+    const po = safeNum(cols[poCol]);
+    const so = safeNum(cols[soCol]);
+    const onHand = safeNum(cols[onHandCol]);
     importData[item] = { g: onHand, h: so, i: po };
   }
   return importData;
@@ -1091,6 +1177,35 @@ function setupEventListeners() {
 
   document.getElementById('import-confirm').addEventListener('click', handleImportConfirm);
 
+  // ===== US Weekly Import modal =====
+  document.getElementById('us-weekly-btn').addEventListener('click', () => {
+    if (!hasData()) { alert('請先上傳 USI 總檔初始化資料'); return; }
+    document.getElementById('us-weekly-modal').style.display = 'flex';
+    document.getElementById('us-weekly-result').innerHTML = '';
+    document.getElementById('us-weekly-confirm').disabled = true;
+    state.selectedUSWeeklyFile = null;
+  });
+
+  document.getElementById('us-weekly-close').addEventListener('click', closeUSWeeklyModal);
+  document.getElementById('us-weekly-cancel').addEventListener('click', closeUSWeeklyModal);
+
+  const usDropZone = document.getElementById('us-weekly-drop-zone');
+  const usFileInput = document.getElementById('us-weekly-file-input');
+
+  usDropZone.addEventListener('click', () => usFileInput.click());
+  usDropZone.addEventListener('dragover', (e) => { e.preventDefault(); usDropZone.classList.add('dragover'); });
+  usDropZone.addEventListener('dragleave', () => usDropZone.classList.remove('dragover'));
+  usDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    usDropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleUSWeeklyFileSelect(e.dataTransfer.files[0]);
+  });
+  usFileInput.addEventListener('change', (e) => {
+    if (e.target.files.length) handleUSWeeklyFileSelect(e.target.files[0]);
+  });
+
+  document.getElementById('us-weekly-confirm').addEventListener('click', handleUSWeeklyImportConfirm);
+
   // ===== Detail modal =====
   document.getElementById('detail-close').addEventListener('click', () => {
     document.getElementById('detail-modal').style.display = 'none';
@@ -1388,6 +1503,96 @@ async function handleImportConfirm() {
     }, 2000);
   } catch (e) {
     document.getElementById('import-result').innerHTML =
+      `<div class="import-result error">❌ 匯入失敗: ${e.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = '確認匯入';
+  }
+}
+
+// ===== US Weekly Import =====
+function closeUSWeeklyModal() {
+  document.getElementById('us-weekly-modal').style.display = 'none';
+  state.selectedUSWeeklyFile = null;
+}
+
+function handleUSWeeklyFileSelect(file) {
+  state.selectedUSWeeklyFile = file;
+  document.getElementById('us-weekly-result').innerHTML =
+    `<div class="info-box">已選擇: <strong>${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)</div>`;
+  document.getElementById('us-weekly-confirm').disabled = false;
+}
+
+async function handleUSWeeklyImportConfirm() {
+  if (!state.selectedUSWeeklyFile) return;
+  const btn = document.getElementById('us-weekly-confirm');
+  btn.disabled = true;
+  btn.textContent = '匯入中...';
+  document.getElementById('us-weekly-result').innerHTML =
+    '<div class="info-box">正在處理，請稍候...</div>';
+
+  try {
+    const file = state.selectedUSWeeklyFile;
+    const ext = file.name.split('.').pop().toLowerCase();
+    let importData;
+
+    if (ext === 'csv') {
+      const text = await file.text();
+      importData = parseUSWeeklyCSV(text);
+    } else {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      importData = parseUSWeeklyExcel(workbook);
+    }
+
+    const count = Object.keys(importData).length;
+    if (!count) {
+      document.getElementById('us-weekly-result').innerHTML =
+        '<div class="import-result error">❌ 未找到有效資料，請確認檔案格式為 QuickBooks 匯出</div>';
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      return;
+    }
+
+    const existingCodes = new Set(state.products.map(p => p.item_code));
+    const sampleItems = Object.keys(importData).slice(0, 50);
+    let matchedCount = 0;
+    for (const code of sampleItems) {
+      if (existingCodes.has(code)) matchedCount++;
+    }
+    const matchRate = sampleItems.length > 0 ? matchedCount / sampleItems.length : 0;
+
+    if (matchRate < 0.1) {
+      document.getElementById('us-weekly-result').innerHTML =
+        `<div class="import-result error">
+          ❌ 此檔案的項目與現有產品編號吻合率過低 (${matchedCount}/${sampleItems.length})。<br>
+          請確認檔案為美國辦公室傳來的 QuickBooks 週報。
+        </div>`;
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      return;
+    }
+
+    const result = doWeeklyImport(importData, file.name);
+
+    document.getElementById('us-weekly-result').innerHTML =
+      `<div class="import-result success">
+        <div class="stat"><span>匯入日期</span><strong>${state.lastImport.date}</strong></div>
+        <div class="stat"><span>檔案名稱</span><strong>${file.name}</strong></div>
+        <div class="stat"><span>總項目數</span><strong>${fmt(result.totalItems)}</strong></div>
+        <div class="stat"><span>更新項目</span><strong>${fmt(result.updatedItems)}</strong></div>
+        <div class="stat"><span>新增項目</span><strong>${fmt(result.newItems)}</strong></div>
+      </div>
+      <p style="margin-top:12px;color:var(--color-green)">✓ 匯入成功！頁面將自動刷新...</p>`;
+    btn.textContent = '完成';
+    setTimeout(() => {
+      closeUSWeeklyModal();
+      btn.disabled = false;
+      btn.textContent = '確認匯入';
+      refreshData();
+      renderAll();
+    }, 2000);
+  } catch (e) {
+    document.getElementById('us-weekly-result').innerHTML =
       `<div class="import-result error">❌ 匯入失敗: ${e.message}</div>`;
     btn.disabled = false;
     btn.textContent = '確認匯入';

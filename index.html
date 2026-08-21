@@ -50,6 +50,7 @@
       <div class="nav-actions">
         <span class="nav-update" id="last-update">載入中...</span>
         <button class="btn btn-primary" id="import-btn">📥 匯入週資料</button>
+        <button class="btn btn-outline" id="us-weekly-btn">🇺🇸 美國週報</button>
         <button class="btn btn-outline" id="export-btn">📊 匯出 CSV</button>
         <button class="btn btn-outline" id="order-btn">📋 訂單分析</button>
         <button class="btn btn-outline" id="data-btn">💾 資料管理</button>
@@ -239,7 +240,7 @@
         <button class="modal-close" id="import-close">✕</button>
       </div>
       <div class="modal-body">
-        <p>上傳美國辦公室每週傳來的 Excel/CSV 檔案</p>
+        <p>上傳 USI 總檔（多分頁 Excel）來更新每週庫存資料</p>
         <div class="info-box">
           <strong>系統將自動執行：</strong>
           <ul>
@@ -253,7 +254,7 @@
         <div class="drop-zone" id="drop-zone">
           <div class="drop-icon">📂</div>
           <p>拖曳檔案到此處或<span class="link">點擊選擇</span></p>
-          <p class="drop-hint">支援 .xlsx, .xls, .csv 格式</p>
+          <p class="drop-hint">支援 .xlsx, .xls, .csv 格式 | USI 總檔格式</p>
           <input type="file" id="file-input" accept=".xlsx,.xls,.csv" hidden>
         </div>
         <div id="import-result" class="import-result"></div>
@@ -261,6 +262,50 @@
       <div class="modal-footer">
         <button class="btn btn-outline" id="import-cancel">取消</button>
         <button class="btn btn-primary" id="import-confirm" disabled>確認匯入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- US Weekly Import Modal -->
+  <div class="modal-overlay" id="us-weekly-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>🇺🇸 美國週報匯入</h2>
+        <button class="modal-close" id="us-weekly-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>上傳美國辦公室每週傳來的 QuickBooks 庫存更新檔案</p>
+        <div class="info-box">
+          <strong>檔案格式（QuickBooks 匯出）：</strong>
+          <ul>
+            <li>Item — 產品編號</li>
+            <li>Quantity On Purchase Order — 採購在途 → <b>I 海上</b></li>
+            <li>Quantity On Sales Order — 銷售訂單 → <b>H 接單</b></li>
+            <li>Quantity On Hand — 手上庫存 → <b>G 庫存</b></li>
+          </ul>
+          <p style="margin-top:4px;font-size:12px">系統會自動跳過空的 Sheet（如 QuickBooks 說明頁），找到正確的資料表。</p>
+        </div>
+        <div class="info-box" style="margin-top:8px">
+          <strong>系統將自動執行：</strong>
+          <ul>
+            <li>將目前的 G/H/I 移至 L/M/N（上週快照）</li>
+            <li>填入新的 G/H/I 數值</li>
+            <li>自動計算結餘 J = G - H + I</li>
+            <li>自動計算週變化 P = J - O</li>
+            <li>儲存歷史快照</li>
+          </ul>
+        </div>
+        <div class="drop-zone" id="us-weekly-drop-zone">
+          <div class="drop-icon">🇺🇸</div>
+          <p>拖曳檔案到此處或<span class="link">點擊選擇</span></p>
+          <p class="drop-hint">支援 .xlsx, .xls, .csv 格式 | QuickBooks 匯出格式</p>
+          <input type="file" id="us-weekly-file-input" accept=".xlsx,.xls,.csv" hidden>
+        </div>
+        <div id="us-weekly-result" class="import-result"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="us-weekly-cancel">取消</button>
+        <button class="btn btn-primary" id="us-weekly-confirm" disabled>確認匯入</button>
       </div>
     </div>
   </div>
