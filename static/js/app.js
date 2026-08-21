@@ -240,7 +240,9 @@ function computeStats() {
   const red = data.filter(d => d.status === 'red').length;
   const yellow = data.filter(d => d.status === 'yellow').length;
   const green = data.filter(d => d.status === 'green').length;
-  const inTransit = state.containers.filter(c => c.status === 'in_transit').length;
+  const inTransitContainers = state.containers.filter(c => c.status === 'in_transit').length;
+  const seaItems = data.filter(d => d.i > 0);
+  const totalSeaQty = seaItems.reduce((sum, d) => sum + d.i, 0);
   const topSellers = data.filter(d => d.sales_2025 > 0).sort((a, b) => b.sales_2025 - a.sales_2025).slice(0, 20);
   const slowSellers = data.filter(d => d.sales_2025 > 0).sort((a, b) => a.sales_2025 - b.sales_2025).slice(0, 20);
   const biggestDrops = data.filter(d => d.p < 0).sort((a, b) => a.p - b.p).slice(0, 10);
@@ -252,7 +254,9 @@ function computeStats() {
     total_products: data.length,
     red, yellow, green,
     judge, available, produce,
-    in_transit_containers: inTransit,
+    in_transit_containers: inTransitContainers,
+    sea_items_count: seaItems.length,
+    total_sea_qty: totalSeaQty,
     last_import: state.lastImport || { date: 'N/A', filename: 'N/A', item_count: 0 },
     weeks_elapsed: getWeeksElapsed(),
     top_sellers: topSellers,
@@ -778,6 +782,8 @@ function renderKPIs() {
     const etas = inTransit.map(c => c.eta).sort();
     const nextEta = etas[0];
     document.getElementById('container-detail').textContent = `${routes} | 最近到貨: ${nextEta}`;
+  } else if (s.sea_items_count > 0) {
+    document.getElementById('container-detail').textContent = `${s.sea_items_count} 項產品在海上 (共 ${fmt(s.total_sea_qty)} 件)`;
   } else {
     document.getElementById('container-detail').textContent = '無在途貨櫃';
   }
@@ -790,7 +796,13 @@ function renderKPIs() {
 function renderContainers() {
   const el = document.getElementById('container-timeline');
   if (!state.containers.length) {
-    el.innerHTML = '<p style="color:var(--color-text-sub)">無在途貨櫃</p>';
+    const seaItems = state.mergedData.filter(d => d.i > 0);
+    if (seaItems.length > 0) {
+      const totalQty = seaItems.reduce((sum, d) => sum + d.i, 0);
+      el.innerHTML = `<p style="color:var(--color-text-sub)">${seaItems.length} 項產品在海上，共 ${fmt(totalQty)} 件</p>`;
+    } else {
+      el.innerHTML = '<p style="color:var(--color-text-sub)">無在途貨櫃</p>';
+    }
     return;
   }
   el.innerHTML = state.containers.map(c => `
