@@ -807,9 +807,15 @@ function renderContainers() {
 
 function renderDrops() {
   const el = document.getElementById('biggest-drops');
+  const dateEl = document.getElementById('drops-date');
   if (!state.stats || !state.stats.biggest_drops) {
     el.innerHTML = '';
+    if (dateEl) dateEl.textContent = '';
     return;
+  }
+  const li = state.lastImport;
+  if (dateEl && li && li.date) {
+    dateEl.textContent = `（截至 ${li.date}）`;
   }
   el.innerHTML = state.stats.biggest_drops.map(d => `
     <div class="change-item" onclick="showDetail('${d.item_code}')" style="cursor:pointer">
@@ -862,7 +868,6 @@ function renderTable() {
         <td>${statusIcon(d.status)}</td>
         <td><strong>${d.item_code}</strong></td>
         <td>${d.name || ''}</td>
-        <td style="font-size:11px;color:var(--color-text-sub)">${d.english_name || ''}</td>
         <td class="num">${fmt(d.g)}</td>
         <td class="num">${fmt(d.h)}</td>
         <td class="num">${fmt(d.i)}</td>
@@ -879,7 +884,7 @@ function renderTable() {
         <td style="text-align:center">${d.website_on === '1' ? '🟢' : d.website_on === '0' ? '🔴' : '-'}</td>
       </tr>
       <tr class="detail-row" id="detail-${d.item_code}">
-        <td colspan="17">
+        <td colspan="16">
           <div class="detail-grid">
             <div class="detail-item"><div class="detail-label">英文品名</div><div class="detail-value">${d.english_name || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">總庫存 Q</div><div class="detail-value">${fmt(d.total_produced)}</div></div>
