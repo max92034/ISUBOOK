@@ -1822,7 +1822,6 @@ function analyzeOrders(orderItems) {
     const weeksLeftW = weeklyRateW > 0 ? Math.round((j / weeklyRateW) * 10) / 10 : null;
 
     // Production status from main dashboard logic
-    const isDiscontinued = (p.discontinued || '').trim() !== '';
     const wLow = weeksLeftW !== null && weeksLeftW < FOUR_WEEKS;
     const pLow = weeksLeftP !== null && weeksLeftP < FOUR_WEEKS;
     const runningLow = wLow || pLow;
