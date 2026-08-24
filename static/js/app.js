@@ -896,9 +896,8 @@ function renderTable() {
   }
 
   tbody.innerHTML = pageData.map(d => {
-    const weeksW = d.weeks_left_w !== null ? `${d.weeks_left_w} 週` : '無數據';
-    const weeksP = d.weeks_left_p !== null ? `${d.weeks_left_p} 週` : '-';
-    const estimate = d.weeks_left_w !== null ? weeksW : weeksP;
+    const weeksW = d.weeks_left_w !== null ? `${d.weeks_left_w} 週` : '無法估算';
+    const estimate = weeksW;
     return `
       <tr onclick="toggleDetail('${d.item_code}')" style="cursor:pointer">
         <td>${statusIcon(d.status)}</td>
