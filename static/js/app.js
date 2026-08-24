@@ -1891,12 +1891,7 @@ function renderOrderAnalysis() {
   const produce = analysis.filter(a => a.status === 'produce');
   const notFound = analysis.filter(a => a.status === 'not_found');
   const discontinued = analysis.filter(a => a.discontinued);
-
-  // "需注意" = safe from order perspective, but has production status from dashboard
-  const watch = analysis.filter(a =>
-    a.status === 'safe' && a.prod_status && a.prod_status !== 'none'
-  );
-  const safeCount = analysis.filter(a => a.status === 'safe' && (a.prod_status === 'none' || !a.prod_status)).length;
+  const safeCount = analysis.filter(a => a.status === 'safe').length;
 
   document.getElementById('order-file-info').textContent =
     `${state.orderFileName} | ${analysis.length} 項 | ${new Date().toISOString().slice(0, 10)}`;
@@ -1906,7 +1901,6 @@ function renderOrderAnalysis() {
       <div class="order-summary-item"><span class="order-dot dot-green"></span> 安全: <strong>${safeCount}</strong></div>
       <div class="order-summary-item"><span class="order-dot dot-blue"></span> 需出貨: <strong>${ship.length}</strong></div>
       <div class="order-summary-item"><span class="order-dot dot-red"></span> 需生產: <strong>${produce.length}</strong></div>
-      <div class="order-summary-item"><span class="order-dot dot-yellow"></span> 需注意: <strong>${watch.length}</strong></div>
       ${discontinued.length > 0 ? `<div class="order-summary-item"><span class="order-dot dot-orange"></span> 不再銷售: <strong>${discontinued.length}</strong></div>` : ''}
       ${notFound.length > 0 ? `<div class="order-summary-item"><span class="order-dot dot-gray"></span> 找不到: <strong>${notFound.length}</strong></div>` : ''}
     </div>
@@ -1914,10 +1908,8 @@ function renderOrderAnalysis() {
 
   renderOrderCard('produce-list', produce, 'produce');
   renderOrderCard('ship-list', ship, 'ship');
-  renderOrderCard('watch-list', watch, 'watch');
   document.getElementById('produce-list-count').textContent = produce.length;
   document.getElementById('ship-list-count').textContent = ship.length;
-  document.getElementById('watch-list-count').textContent = watch.length;
 
   const nfEl = document.getElementById('order-not-found');
   if (notFound.length > 0) {
@@ -1946,25 +1938,16 @@ function renderOrderCard(elId, items, type) {
     const newJClass = a.newJ < 0 ? 'neg' : '';
     const discBadge = a.discontinued ? '<span class="disc-badge" title="此型號已不再銷售">⚠ 不再銷售</span>' : '';
 
-    // Production status tag
-    let prodTag = '';
-    if (a.prod_status === 'judge') prodTag = '<span class="prod-tag prod-judge">需判斷</span>';
-    else if (a.prod_status === 'available') prodTag = '<span class="prod-tag prod-available">有貨可出</span>';
-    else if (a.prod_status === 'produce') prodTag = '<span class="prod-tag prod-produce">需要生產</span>';
-
     let actionLine = '';
     if (type === 'produce') {
       actionLine = `<span class="neg">需生產: ${fmt(a.shortage)}</span>`;
     } else if (type === 'ship') {
       actionLine = `<span class="pos">可出貨: ${fmt(a.shortage)}</span>`;
-    } else if (type === 'watch') {
-      const weeksInfo = a.weeks_left_w !== null ? `${fmt(a.weeks_left_w)} 週` : '無數據';
-      actionLine = `<span class="warn">預估 ${weeksInfo} 用完</span>`;
     }
 
     return `
       <div class="order-item ${a.discontinued ? 'order-item-disc' : ''}" onclick="showDetail('${a.sku}')" style="cursor:pointer">
-        <div class="order-item-sku">${a.sku} ${discBadge} ${prodTag}</div>
+        <div class="order-item-sku">${a.sku} ${discBadge}</div>
         <div class="order-item-name">${a.name || a.english_name || ''}</div>
         <div class="order-item-nums">
           <span>訂單: <strong>${fmt(a.quantity)}</strong></span>
@@ -1990,11 +1973,7 @@ function renderOrderTable(analysis) {
     const dir = state.orderSortDir === 'asc' ? 1 : -1;
     sorted.sort((a, b) => {
       let va, vb;
-      if (field === 'prod_status') {
-        const order = { produce: 0, ship: 1, judge: 2, available: 3, none: 4 };
-        va = order[a.prod_status] ?? 5;
-        vb = order[b.prod_status] ?? 5;
-      } else if (field === 'weeks_left_w') {
+      if (field === 'weeks_left_w') {
         va = a.weeks_left_w === null ? -1 : a.weeks_left_w;
         vb = b.weeks_left_w === null ? -1 : b.weeks_left_w;
       } else {
@@ -2016,11 +1995,6 @@ function renderOrderTable(analysis) {
     else if (a.status === 'produce') badge = '<span class="status-badge status-red">產</span>';
     else badge = '<span class="status-badge" style="background:#eee;color:#999">?</span>';
 
-    let prodTag = '';
-    if (a.prod_status === 'judge') prodTag = '<span class="prod-tag prod-judge">需判斷</span>';
-    else if (a.prod_status === 'available') prodTag = '<span class="prod-tag prod-available">有貨可出</span>';
-    else if (a.prod_status === 'produce') prodTag = '<span class="prod-tag prod-produce">需要生產</span>';
-
     const discBadge = a.discontinued ? ' <span class="disc-badge" title="此型號已不再銷售">⚠</span>' : '';
     const rowClass = a.discontinued ? ' class="disc-row"' : '';
     const weeksInfo = a.weeks_left_w !== null ? `${fmt(a.weeks_left_w)}週` : '-';
@@ -2034,7 +2008,6 @@ function renderOrderTable(analysis) {
         <td class="num ${valClass(a.j)}">${fmtSigned(a.j)}</td>
         <td class="num ${valClass(a.newJ)}"><strong>${fmtSigned(a.newJ)}</strong></td>
         <td class="num">${fmt(a.total_inv)}</td>
-        <td>${prodTag || '-'}</td>
         <td class="num">${weeksInfo}</td>
         <td class="num ${a.shortage > 0 ? 'neg' : ''}">${a.shortage > 0 ? fmt(a.shortage) : '-'}</td>
       </tr>
@@ -2042,7 +2015,7 @@ function renderOrderTable(analysis) {
   }).join('');
 
   if (!analysis.length) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--color-text-sub)">無訂單資料</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--color-text-sub)">無訂單資料</td></tr>';
   }
 }
 
@@ -2289,15 +2262,13 @@ async function handleOrderImportConfirm() {
 
     const produce = state.orderAnalysis.filter(a => a.status === 'produce').length;
     const ship = state.orderAnalysis.filter(a => a.status === 'ship').length;
-    const safe = state.orderAnalysis.filter(a => a.status === 'safe' && (!a.prod_status || a.prod_status === 'none')).length;
-    const watch = state.orderAnalysis.filter(a => a.status === 'safe' && a.prod_status && a.prod_status !== 'none').length;
+    const safe = state.orderAnalysis.filter(a => a.status === 'safe').length;
     const nf = state.orderAnalysis.filter(a => a.status === 'not_found').length;
 
     document.getElementById('order-import-result').innerHTML =
       `<div class="import-result success">
         <div class="stat"><span>合併項目</span><strong>${aggregated.length}</strong></div>
         <div class="stat"><span>安全</span><strong>${safe}</strong></div>
-        <div class="stat"><span>需注意</span><strong>${watch}</strong></div>
         <div class="stat"><span>需出貨</span><strong>${ship}</strong></div>
         <div class="stat"><span>需生產</span><strong>${produce}</strong></div>
         ${nf > 0 ? `<div class="stat"><span>找不到</span><strong>${nf}</strong></div>` : ''}
