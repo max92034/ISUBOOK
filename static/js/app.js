@@ -1809,7 +1809,12 @@ function analyzeOrders(orderItems) {
     const g = safeNum(inv?.g_inventory);
     const h = safeNum(inv?.h_orders);
     const i = safeNum(inv?.i_intransit);
+    const l = safeNum(inv?.l_prev_inventory);
+    const m = safeNum(inv?.m_prev_orders);
+    const n = safeNum(inv?.n_prev_intransit);
     const j = Math.round((g - h + i) * 10) / 10;
+    const o = Math.round((l - m + n) * 10) / 10;
+    const pDiff = Math.round((j - o) * 10) / 10;
     const newJ = Math.round((j - item.quantity) * 10) / 10;
     const totalProduced = safeNum(prod.total_produced);
     const huiyang = safeNum(prod.huiyang_inv);
@@ -1820,6 +1825,7 @@ function analyzeOrders(orderItems) {
     const weeklyRateW = sales2025 > 0 && weeksElapsed > 0
       ? Math.round((sales2025 / weeksElapsed) * 10) / 10 : 0;
     const weeksLeftW = weeklyRateW > 0 ? Math.round((j / weeklyRateW) * 10) / 10 : null;
+    const weeksLeftP = pDiff && pDiff < 0 ? Math.round((j / Math.abs(pDiff)) * 10) / 10 : null;
 
     // Production status from main dashboard logic
     const wLow = weeksLeftW !== null && weeksLeftW < FOUR_WEEKS;
@@ -1862,6 +1868,7 @@ function analyzeOrders(orderItems) {
       shortage,
       weekly_rate_w: weeklyRateW,
       weeks_left_w: weeksLeftW,
+      weeks_left_p: weeksLeftP,
     };
   });
 }
