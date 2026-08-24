@@ -82,17 +82,17 @@
         <div class="kpi-card kpi-orange">
           <div class="kpi-header">🔍 需判斷是否生產</div>
           <div class="kpi-value" id="judge-count">--</div>
-          <div class="kpi-sub">非賣完不賣，Q&lt;60 或預估&lt;4週</div>
+          <div class="kpi-sub">Q&lt;60 或預估&lt;4週</div>
         </div>
         <div class="kpi-card kpi-teal">
           <div class="kpi-header">📦 有貨可出</div>
           <div class="kpi-value" id="available-count">--</div>
-          <div class="kpi-sub">Q&lt;50 或預估&lt;4週</div>
+          <div class="kpi-sub">J&lt;50或預估&lt;4週，且Q有庫存可出</div>
         </div>
         <div class="kpi-card kpi-purple">
           <div class="kpi-header">🏭 需要生產</div>
           <div class="kpi-value" id="produce-count">--</div>
-          <div class="kpi-sub">非賣完不賣，Q&lt;40 或預估&lt;4週</div>
+          <div class="kpi-sub">總庫存預估 &lt; 13 週用完</div>
         </div>
       </section>
 
@@ -136,7 +136,7 @@
                 <th class="sortable num" data-sort="p">週變化 P</th>
                 <th class="sortable num" data-sort="sales_2025">2025售 W</th>
                 <th class="sortable num" data-sort="total_shipped">總出 X</th>
-                <th class="sortable num" data-sort="total_produced">總庫存 Q</th>
+                <th class="sortable num" data-sort="total_inv">總庫存 (J+Q)</th>
                 <th class="num">惠陽 R</th>
                 <th class="num">印尼 S</th>
                 <th class="num">緬甸 T</th>
@@ -217,7 +217,7 @@
                   <th class="num sortable" data-sort="quantity">訂單量 <span class="sort-icon"></span></th>
                   <th class="num sortable" data-sort="j">當前結餘 J <span class="sort-icon"></span></th>
                   <th class="num sortable" data-sort="newJ">訂單後結餘 <span class="sort-icon"></span></th>
-                  <th class="num sortable" data-sort="total_produced">總庫存 Q <span class="sort-icon"></span></th>
+                  <th class="num sortable" data-sort="total_inv">總庫存 (J+Q) <span class="sort-icon"></span></th>
                   <th class="sortable" data-sort="prod_status">生產狀態 <span class="sort-icon"></span></th>
                   <th class="num sortable" data-sort="weeks_left_w">預估用完 <span class="sort-icon"></span></th>
                   <th class="num sortable" data-sort="shortage">缺口 <span class="sort-icon"></span></th>

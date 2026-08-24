@@ -13,6 +13,7 @@ const LS_KEYS = {
 const WEEKS_IN_YEAR = 52;
 const WARN_WEEKS = 4;
 const FOUR_WEEKS = 4;
+const PRODUCE_WEEKS = 13;
 
 const SKU_COLS = ['sku', 'item', 'item code', 'item_code', 'item no', 'item number', 'product', 'product code', 'product id', 'model', 'model no', '型號', '產品編號', '品號', '編號', '商品編號', '貨號'];
 const QTY_COLS = ['quantity', 'qty', 'quantity ordered', 'order quantity', 'order qty', '數量', '訂購數量', '訂單數量', 'amount', 'count', '訂購量'];
@@ -193,16 +194,20 @@ function getMergedData() {
     const myanmarInv = safeNum(p.myanmar_inv);
 
     const isDiscontinued = (p.discontinued || '').trim() !== '';
+    const totalInv = Math.round((j + totalProduced) * 10) / 10;
+    const weeksLeftTotal = weeklyRateW > 0 ? Math.round((totalInv / weeklyRateW) * 10) / 10 : null;
+
     const wLow = weeksLeftW !== null && weeksLeftW < FOUR_WEEKS;
     const pLow = weeksLeftP !== null && weeksLeftP < FOUR_WEEKS;
     const runningLow = wLow || pLow;
+    const jLow = wLow || j < 50;
 
     let prodStatus = 'none';
-    if (!isDiscontinued && (totalProduced < 40 || runningLow)) {
+    if (weeksLeftTotal !== null && weeksLeftTotal < PRODUCE_WEEKS) {
       prodStatus = 'produce';
-    } else if (totalProduced < 50 || runningLow) {
+    } else if (jLow && totalProduced > 0) {
       prodStatus = 'available';
-    } else if (!isDiscontinued && (totalProduced < 60 || runningLow)) {
+    } else if (totalProduced < 60 || runningLow) {
       prodStatus = 'judge';
     }
 
@@ -233,6 +238,8 @@ function getMergedData() {
       weekly_rate_w: weeklyRateW,
       weeks_left_w: weeksLeftW,
       weeks_left_p: weeksLeftP,
+      total_inv: totalInv,
+      weeks_left_total: weeksLeftTotal,
     });
   }
   return merged;
@@ -694,7 +701,7 @@ function exportCSV() {
     'item_code', 'name', 'english_name', 'g', 'h', 'i', 'j', 'l', 'm', 'n', 'o', 'p',
     'sales_2025', 'total_shipped', 'status', 'prod_status', 'production_unit',
     'factory_inventory', 'shipping_warehouse', 'notes', 'directive',
-    'total_produced', 'huiyang_inv', 'indonesia_inv', 'myanmar_inv',
+    'total_produced', 'total_inv', 'huiyang_inv', 'indonesia_inv', 'myanmar_inv',
     'factory_unshipped', 'website_on', 'web_note',
   ];
   const lines = [fields.join(',')];
@@ -899,7 +906,7 @@ function renderTable() {
         <td class="num ${valClass(d.p)}">${fmtSigned(d.p)}</td>
         <td class="num">${fmt(d.sales_2025)}</td>
         <td class="num">${fmt(d.total_shipped)}</td>
-        <td class="num" style="font-weight:600">${fmt(d.total_produced)}</td>
+        <td class="num" style="font-weight:600">${fmt(d.total_inv)}</td>
         <td class="num">${fmt(d.huiyang_inv)}</td>
         <td class="num">${fmt(d.indonesia_inv)}</td>
         <td class="num">${fmt(d.myanmar_inv)}</td>
@@ -911,7 +918,7 @@ function renderTable() {
         <td colspan="16">
           <div class="detail-grid">
             <div class="detail-item"><div class="detail-label">英文品名</div><div class="detail-value">${d.english_name || '-'}</div></div>
-            <div class="detail-item"><div class="detail-label">總庫存 Q</div><div class="detail-value">${fmt(d.total_produced)}</div></div>
+            <div class="detail-item"><div class="detail-label">總庫存 (J+Q)</div><div class="detail-value">${fmt(d.total_inv)}</div></div>
             <div class="detail-item"><div class="detail-label">惠陽廠 R</div><div class="detail-value">${fmt(d.huiyang_inv)}</div></div>
             <div class="detail-item"><div class="detail-label">印尼廠 S</div><div class="detail-value">${fmt(d.indonesia_inv)}</div></div>
             <div class="detail-item"><div class="detail-label">緬甸廠 T</div><div class="detail-value">${fmt(d.myanmar_inv)}</div></div>
@@ -1036,7 +1043,7 @@ function showDetail(code) {
   body.innerHTML = `
     <div class="detail-grid" style="grid-template-columns:repeat(3,1fr)">
       <div class="detail-item"><div class="detail-label">英文品名</div><div class="detail-value">${p.english_name || '-'}</div></div>
-      <div class="detail-item"><div class="detail-label">總庫存 Q</div><div class="detail-value">${fmt(p.total_produced)}</div></div>
+      <div class="detail-item"><div class="detail-label">總庫存 (J+Q)</div><div class="detail-value">${fmt(p.total_inv)}</div></div>
       <div class="detail-item"><div class="detail-label">惠陽廠 R</div><div class="detail-value">${fmt(p.huiyang_inv)}</div></div>
       <div class="detail-item"><div class="detail-label">印尼廠 S</div><div class="detail-value">${fmt(p.indonesia_inv)}</div></div>
       <div class="detail-item"><div class="detail-label">緬甸廠 T</div><div class="detail-value">${fmt(p.myanmar_inv)}</div></div>
@@ -1800,6 +1807,7 @@ function analyzeOrders(orderItems) {
         g: 0, h: 0, i: 0, j: 0,
         newJ: 0,
         total_produced: 0,
+        total_inv: 0,
         huiyang_inv: 0, indonesia_inv: 0, myanmar_inv: 0,
         shortage: 0,
         weekly_rate_w: 0, weeks_left_w: null,
@@ -1827,21 +1835,23 @@ function analyzeOrders(orderItems) {
     const weeksLeftW = weeklyRateW > 0 ? Math.round((j / weeklyRateW) * 10) / 10 : null;
     const weeksLeftP = pDiff && pDiff < 0 ? Math.round((j / Math.abs(pDiff)) * 10) / 10 : null;
 
-    // Production status from main dashboard logic
+    const totalInv = Math.round((j + totalProduced) * 10) / 10;
+    const weeksLeftTotal = weeklyRateW > 0 ? Math.round((totalInv / weeklyRateW) * 10) / 10 : null;
+
     const wLow = weeksLeftW !== null && weeksLeftW < FOUR_WEEKS;
     const pLow = weeksLeftP !== null && weeksLeftP < FOUR_WEEKS;
     const runningLow = wLow || pLow;
+    const jLow = wLow || j < 50;
 
     let prodStatus = 'none';
-    if (!isDiscontinued && (totalProduced < 40 || runningLow)) {
+    if (weeksLeftTotal !== null && weeksLeftTotal < PRODUCE_WEEKS) {
       prodStatus = 'produce';
-    } else if (totalProduced < 50 || runningLow) {
+    } else if (jLow && totalProduced > 0) {
       prodStatus = 'available';
-    } else if (!isDiscontinued && (totalProduced < 60 || runningLow)) {
+    } else if (totalProduced < 60 || runningLow) {
       prodStatus = 'judge';
     }
 
-    // Order analysis status
     let status, shortage = 0;
     if (newJ >= 0) {
       status = 'safe';
@@ -1862,6 +1872,8 @@ function analyzeOrders(orderItems) {
       discontinued: isDiscontinued,
       g, h, i, j, newJ,
       total_produced: totalProduced,
+      total_inv: totalInv,
+      weeks_left_total: weeksLeftTotal,
       huiyang_inv: huiyang,
       indonesia_inv: indonesia,
       myanmar_inv: myanmar,
@@ -2021,7 +2033,7 @@ function renderOrderTable(analysis) {
         <td class="num">${fmt(a.quantity)}</td>
         <td class="num ${valClass(a.j)}">${fmtSigned(a.j)}</td>
         <td class="num ${valClass(a.newJ)}"><strong>${fmtSigned(a.newJ)}</strong></td>
-        <td class="num">${fmt(a.total_produced)}</td>
+        <td class="num">${fmt(a.total_inv)}</td>
         <td>${prodTag || '-'}</td>
         <td class="num">${weeksInfo}</td>
         <td class="num ${a.shortage > 0 ? 'neg' : ''}">${a.shortage > 0 ? fmt(a.shortage) : '-'}</td>
