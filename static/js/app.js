@@ -872,6 +872,11 @@ function getFiltered() {
   const dir = state.sortDir === 'desc' ? -1 : 1;
   data = [...data].sort((a, b) => {
     let av = a[field], bv = b[field];
+    if (field === 'weeks_left_w' || field === 'weeks_left_p') {
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+    }
     if (typeof av === 'string') return av.localeCompare(bv || '') * dir;
     return ((av || 0) - (bv || 0)) * dir;
   });
