@@ -1798,14 +1798,7 @@ function aggregateOrders(items) {
 }
 
 function splitOrderLine(line) {
-  let parts = line.split(/\t/).map(c => c.trim()).filter(c => c);
-  if (parts.length >= 2) return parts;
-
-  parts = line.split(/\s{2,}/).map(c => c.trim()).filter(c => c);
-  if (parts.length >= 2) return parts;
-
-  parts = line.split(/[\s,]+/).map(c => c.trim()).filter(c => c);
-  return parts;
+  return line.split(/[\t,]+|\s+/).map(c => c.trim()).filter(c => c);
 }
 
 function parseDailyOrderText(text) {
@@ -1813,7 +1806,7 @@ function parseDailyOrderText(text) {
   if (!lines.length) return [];
 
   let skuCol = -1, qtyCol = -1;
-  let headerFound = false;
+  let dataStart = 0;
 
   const headerLower = lines[0].toLowerCase();
   if (headerLower.includes('sku') || headerLower.includes('item')) {
@@ -1822,16 +1815,14 @@ function parseDailyOrderText(text) {
       if (cols[i].includes('sku') || cols[i].includes('item') || cols[i].includes('品') || cols[i].includes('型')) skuCol = i;
       if (cols[i] === 'qty' || cols[i].includes('qty') || cols[i].includes('數量') || cols[i].includes('quantity')) qtyCol = i;
     }
-    headerFound = skuCol >= 0 || qtyCol >= 0;
+    if (skuCol >= 0 || qtyCol >= 0) dataStart = 1;
   }
 
-  const dataLines = headerFound ? lines.slice(1) : lines;
+  const skuPattern = /^[A-Za-z]{2,}\d{3,}[A-Za-z]*$/;
   const items = [];
 
-  const skuPattern = /^[A-Za-z]{2,}\d{3,}[A-Za-z]*$/;
-
-  for (const line of dataLines) {
-    const parts = splitOrderLine(line);
+  for (let li = dataStart; li < lines.length; li++) {
+    const parts = splitOrderLine(lines[li]);
     if (parts.length < 2) continue;
 
     let sku = null, qty = null;
@@ -1849,7 +1840,7 @@ function parseDailyOrderText(text) {
           sku = parts[i];
           for (let j = 0; j < parts.length; j++) {
             if (j === i) continue;
-            if (parts[j].match(/^\d+$/)) {
+              if (/^\d+$/.test(parts[j])) {
               const val = parseInt(parts[j]);
               if (val > 0) {
                 qty = val;
