@@ -1818,7 +1818,7 @@ function parseDailyOrderText(text) {
     if (skuCol >= 0 || qtyCol >= 0) dataStart = 1;
   }
 
-  const skuPattern = /^[A-Za-z]{2,}\d{3,}[A-Za-z]*$/;
+  const skuPattern = /^[A-Za-z]+\d{3,}[A-Za-z0-9]*$/;
   const items = [];
 
   for (let li = dataStart; li < lines.length; li++) {
