@@ -1396,6 +1396,26 @@ function setupEventListeners() {
   });
 
   document.getElementById('order-import-confirm').addEventListener('click', handleOrderImportConfirm);
+
+  document.getElementById('daily-order-btn').addEventListener('click', () => {
+    if (!state.products.length) {
+      alert('請先匯入總檔資料');
+      return;
+    }
+    document.getElementById('daily-order-modal').style.display = 'flex';
+    document.getElementById('daily-order-textarea').value = '';
+    document.getElementById('daily-order-result').innerHTML = '';
+  });
+
+  document.getElementById('daily-order-close').addEventListener('click', () => {
+    document.getElementById('daily-order-modal').style.display = 'none';
+  });
+
+  document.getElementById('daily-order-cancel').addEventListener('click', () => {
+    document.getElementById('daily-order-modal').style.display = 'none';
+  });
+
+  document.getElementById('daily-order-analyze').addEventListener('click', handleDailyOrderAnalyze);
 }
 
 function updateDataStatus() {
@@ -1775,6 +1795,125 @@ function aggregateOrders(items) {
     }
   }
   return order;
+}
+
+function parseDailyOrderText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  if (!lines.length) return [];
+
+  let skuCol = -1, qtyCol = -1;
+  let headerFound = false;
+
+  const headerLower = lines[0].toLowerCase();
+  if (headerLower.includes('sku') || headerLower.includes('item')) {
+    const cols = lines[0].split(/\t|,|\s{2,}/).map(c => c.trim().toLowerCase());
+    for (let i = 0; i < cols.length; i++) {
+      if (cols[i].includes('sku') || cols[i].includes('item') || cols[i].includes('品') || cols[i].includes('型')) skuCol = i;
+      if (cols[i] === 'qty' || cols[i].includes('qty') || cols[i].includes('數量') || cols[i].includes('quantity')) qtyCol = i;
+    }
+    headerFound = skuCol >= 0 || qtyCol >= 0;
+  }
+
+  const dataLines = headerFound ? lines.slice(1) : lines;
+  const items = [];
+
+  for (const line of dataLines) {
+    const parts = line.split(/\t|,|\s{2,}/).map(c => c.trim()).filter(c => c);
+
+    const skuPattern = /[A-Za-z]{2,}\d{3,}[A-Za-z]*/;
+    let sku = null, qty = null;
+
+    if (skuCol >= 0 && qtyCol >= 0 && parts[skuCol] && parts[qtyCol]) {
+      if (skuPattern.test(parts[skuCol])) {
+        sku = parts[skuCol];
+        qty = parseInt(parts[qtyCol]) || 0;
+      }
+    }
+
+    if (!sku) {
+      if (parts.length >= 2) {
+        for (let i = 0; i < parts.length; i++) {
+          if (skuPattern.test(parts[i])) {
+            sku = parts[i];
+            for (let j = 0; j < parts.length; j++) {
+              if (j === i) continue;
+              const val = parseInt(parts[j]);
+              if (!isNaN(val) && val > 0 && parts[j].match(/^\d+$/)) {
+                qty = val;
+                break;
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      if (!sku) {
+        const m = line.match(/([A-Za-z]{2,}\d{3,}[A-Za-z]*)/);
+        if (m) {
+          sku = m[1];
+          const remaining = line.replace(m[1], '');
+          const nums = remaining.match(/\b(\d+)\b/g);
+          if (nums) {
+            for (const n of nums) {
+              const val = parseInt(n);
+              if (val > 0 && val < 10000) {
+                qty = val;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (sku && qty > 0) {
+      items.push({ sku, quantity: qty });
+    }
+  }
+
+  return items;
+}
+
+function handleDailyOrderAnalyze() {
+  const text = document.getElementById('daily-order-textarea').value.trim();
+  if (!text) {
+    document.getElementById('daily-order-result').innerHTML =
+      '<div class="import-result error">請貼上訂單內容</div>';
+    return;
+  }
+
+  const items = parseDailyOrderText(text);
+  if (!items.length) {
+    document.getElementById('daily-order-result').innerHTML =
+      '<div class="import-result error">未解析出任何訂單項目，請確認格式是否正確</div>';
+    return;
+  }
+
+  const aggregated = aggregateOrders(items);
+  const analysis = analyzeOrders(aggregated);
+
+  state.orderAnalysis = analysis;
+  state.orderFileName = `每日訂單 ${new Date().toISOString().slice(0, 10)}`;
+
+  const safe = analysis.filter(a => a.status === 'safe').length;
+  const ship = analysis.filter(a => a.status === 'ship').length;
+  const produce = analysis.filter(a => a.status === 'produce').length;
+  const nf = analysis.filter(a => a.status === 'not_found').length;
+
+  document.getElementById('daily-order-result').innerHTML =
+    `<div class="import-result success">
+      <div class="stat"><span>解析項目</span><strong>${items.length}</strong></div>
+      <div class="stat"><span>合併後</span><strong>${aggregated.length}</strong></div>
+      <div class="stat"><span>安全</span><strong>${safe}</strong></div>
+      <div class="stat"><span>需出貨</span><strong>${ship}</strong></div>
+      <div class="stat"><span>需生產</span><strong>${produce}</strong></div>
+      ${nf > 0 ? `<div class="stat"><span>找不到</span><strong>${nf}</strong></div>` : ''}
+    </div>`;
+
+  document.getElementById('daily-order-modal').style.display = 'none';
+  showOrderView();
+  renderOrderAnalysis();
 }
 
 function analyzeOrders(orderItems) {

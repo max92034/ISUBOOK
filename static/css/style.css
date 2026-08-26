@@ -350,6 +350,23 @@ body {
 .drop-zone .link { color: var(--color-blue); text-decoration: underline; }
 .drop-hint { font-size: 12px; color: var(--color-text-sub); margin-top: 4px; }
 
+.daily-order-textarea {
+  width: 100%;
+  min-height: 200px;
+  padding: 12px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.daily-order-textarea:focus {
+  outline: none;
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 2px var(--color-blue-bg);
+}
+
 .import-result {
   margin-top: 12px;
   padding: 12px;

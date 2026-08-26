@@ -53,6 +53,7 @@
         <button class="btn btn-outline" id="us-weekly-btn">🇺🇸 美國週報</button>
         <button class="btn btn-outline" id="export-btn">📊 匯出 CSV</button>
         <button class="btn btn-outline" id="order-btn">📋 訂單分析</button>
+        <button class="btn btn-outline" id="daily-order-btn">📝 每日訂單</button>
         <button class="btn btn-outline" id="data-btn">💾 資料管理</button>
       </div>
     </nav>
@@ -391,6 +392,39 @@
       <div class="modal-footer">
         <button class="btn btn-outline" id="order-import-cancel">取消</button>
         <button class="btn btn-primary" id="order-import-confirm" disabled>確認匯入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Daily Order Paste Modal -->
+  <div class="modal-overlay" id="daily-order-modal" style="display:none">
+    <div class="modal modal-large">
+      <div class="modal-header">
+        <h2>📝 每日訂單分析</h2>
+        <button class="modal-close" id="daily-order-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>複製 Email 中的訂單 GRID 內容，貼到下方文字框進行分析。</p>
+        <div class="info-box">
+          <strong>支援格式：</strong>
+          <ul>
+            <li>SKU / PRICE / QTY / AMOUNT 格式（自動偵測 QTY 欄位）</li>
+            <li>每行一筆，以 Tab 或空格分隔</li>
+            <li>系統會自動辨識含 SKU 編號的資料行</li>
+          </ul>
+        </div>
+        <textarea id="daily-order-textarea" class="daily-order-textarea" placeholder="在此貼上 Email 訂單內容...
+
+範例:
+SKU    PRICE    QTY    AMOUNT
+WU78618A4    18.45    3    55.35
+WU78104A4    15.53    3    46.59
+..." rows="12"></textarea>
+        <div id="daily-order-result" class="import-result"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="daily-order-cancel">取消</button>
+        <button class="btn btn-primary" id="daily-order-analyze">開始分析</button>
       </div>
     </div>
   </div>
