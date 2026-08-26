@@ -1797,6 +1797,17 @@ function aggregateOrders(items) {
   return order;
 }
 
+function splitOrderLine(line) {
+  let parts = line.split(/\t/).map(c => c.trim()).filter(c => c);
+  if (parts.length >= 2) return parts;
+
+  parts = line.split(/\s{2,}/).map(c => c.trim()).filter(c => c);
+  if (parts.length >= 2) return parts;
+
+  parts = line.split(/[\s,]+/).map(c => c.trim()).filter(c => c);
+  return parts;
+}
+
 function parseDailyOrderText(text) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
   if (!lines.length) return [];
@@ -1806,7 +1817,7 @@ function parseDailyOrderText(text) {
 
   const headerLower = lines[0].toLowerCase();
   if (headerLower.includes('sku') || headerLower.includes('item')) {
-    const cols = lines[0].split(/\t|,|\s{2,}/).map(c => c.trim().toLowerCase());
+    const cols = splitOrderLine(lines[0]).map(c => c.trim().toLowerCase());
     for (let i = 0; i < cols.length; i++) {
       if (cols[i].includes('sku') || cols[i].includes('item') || cols[i].includes('品') || cols[i].includes('型')) skuCol = i;
       if (cols[i] === 'qty' || cols[i].includes('qty') || cols[i].includes('數量') || cols[i].includes('quantity')) qtyCol = i;
@@ -1817,10 +1828,12 @@ function parseDailyOrderText(text) {
   const dataLines = headerFound ? lines.slice(1) : lines;
   const items = [];
 
-  for (const line of dataLines) {
-    const parts = line.split(/\t|,|\s{2,}/).map(c => c.trim()).filter(c => c);
+  const skuPattern = /^[A-Za-z]{2,}\d{3,}[A-Za-z]*$/;
 
-    const skuPattern = /[A-Za-z]{2,}\d{3,}[A-Za-z]*/;
+  for (const line of dataLines) {
+    const parts = splitOrderLine(line);
+    if (parts.length < 2) continue;
+
     let sku = null, qty = null;
 
     if (skuCol >= 0 && qtyCol >= 0 && parts[skuCol] && parts[qtyCol]) {
@@ -1831,38 +1844,20 @@ function parseDailyOrderText(text) {
     }
 
     if (!sku) {
-      if (parts.length >= 2) {
-        for (let i = 0; i < parts.length; i++) {
-          if (skuPattern.test(parts[i])) {
-            sku = parts[i];
-            for (let j = 0; j < parts.length; j++) {
-              if (j === i) continue;
+      for (let i = 0; i < parts.length; i++) {
+        if (skuPattern.test(parts[i])) {
+          sku = parts[i];
+          for (let j = 0; j < parts.length; j++) {
+            if (j === i) continue;
+            if (parts[j].match(/^\d+$/)) {
               const val = parseInt(parts[j]);
-              if (!isNaN(val) && val > 0 && parts[j].match(/^\d+$/)) {
-                qty = val;
-                break;
-              }
-            }
-            break;
-          }
-        }
-      }
-
-      if (!sku) {
-        const m = line.match(/([A-Za-z]{2,}\d{3,}[A-Za-z]*)/);
-        if (m) {
-          sku = m[1];
-          const remaining = line.replace(m[1], '');
-          const nums = remaining.match(/\b(\d+)\b/g);
-          if (nums) {
-            for (const n of nums) {
-              const val = parseInt(n);
-              if (val > 0 && val < 10000) {
+              if (val > 0) {
                 qty = val;
                 break;
               }
             }
           }
+          break;
         }
       }
     }
