@@ -197,24 +197,21 @@ function getMergedData() {
     const code = p.item_code;
     const inv = invMap[code] || {};
     const pack12 = isPack12(code);
-    const gRaw = safeNum(inv.g_inventory);
-    const h = safeNum(inv.h_orders);
-    const iRaw = safeNum(inv.i_intransit);
-    const lRaw = safeNum(inv.l_prev_inventory);
-    const m = safeNum(inv.m_prev_orders);
-    const nRaw = safeNum(inv.n_prev_intransit);
-
-    const g = pack12 ? gRaw * PACK_SIZE : gRaw;
-    const i = pack12 ? iRaw * PACK_SIZE : iRaw;
-    const l = pack12 ? lRaw * PACK_SIZE : lRaw;
-    const n = pack12 ? nRaw * PACK_SIZE : nRaw;
+    const g = pack12 ? safeNum(inv.g_inventory) * PACK_SIZE : safeNum(inv.g_inventory);
+    const h = pack12 ? safeNum(inv.h_orders) * PACK_SIZE : safeNum(inv.h_orders);
+    const i = pack12 ? safeNum(inv.i_intransit) * PACK_SIZE : safeNum(inv.i_intransit);
+    const l = pack12 ? safeNum(inv.l_prev_inventory) * PACK_SIZE : safeNum(inv.l_prev_inventory);
+    const m = pack12 ? safeNum(inv.m_prev_orders) * PACK_SIZE : safeNum(inv.m_prev_orders);
+    const n = pack12 ? safeNum(inv.n_prev_intransit) * PACK_SIZE : safeNum(inv.n_prev_intransit);
 
     const j = Math.round((g - h + i) * 10) / 10;
     const o = Math.round((l - m + n) * 10) / 10;
     const pDiff = Math.round((j - o) * 10) / 10;
 
-    const sales2025 = safeNum(p.sales_2025);
-    const totalShipped = safeNum(p.total_shipped);
+    const sales2025Raw = safeNum(p.sales_2025);
+    const totalShippedRaw = safeNum(p.total_shipped);
+    const sales2025 = pack12 ? sales2025Raw * PACK_SIZE : sales2025Raw;
+    const totalShipped = pack12 ? totalShippedRaw * PACK_SIZE : totalShippedRaw;
     const status = calculateStatus(j, sales2025, pDiff, i, weeksElapsed);
 
     const weeklyRateW = sales2025 > 0 && weeksElapsed > 0
@@ -1980,17 +1977,12 @@ function analyzeOrders(orderItems) {
     }
 
     const pack12 = isPack12(item.sku);
-    const gRaw = safeNum(inv?.g_inventory);
-    const h = safeNum(inv?.h_orders);
-    const iRaw = safeNum(inv?.i_intransit);
-    const lRaw = safeNum(inv?.l_prev_inventory);
-    const m = safeNum(inv?.m_prev_orders);
-    const nRaw = safeNum(inv?.n_prev_intransit);
-
-    const g = pack12 ? gRaw * PACK_SIZE : gRaw;
-    const i = pack12 ? iRaw * PACK_SIZE : iRaw;
-    const l = pack12 ? lRaw * PACK_SIZE : lRaw;
-    const n = pack12 ? nRaw * PACK_SIZE : nRaw;
+    const g = pack12 ? safeNum(inv?.g_inventory) * PACK_SIZE : safeNum(inv?.g_inventory);
+    const h = pack12 ? safeNum(inv?.h_orders) * PACK_SIZE : safeNum(inv?.h_orders);
+    const i = pack12 ? safeNum(inv?.i_intransit) * PACK_SIZE : safeNum(inv?.i_intransit);
+    const l = pack12 ? safeNum(inv?.l_prev_inventory) * PACK_SIZE : safeNum(inv?.l_prev_inventory);
+    const m = pack12 ? safeNum(inv?.m_prev_orders) * PACK_SIZE : safeNum(inv?.m_prev_orders);
+    const n = pack12 ? safeNum(inv?.n_prev_intransit) * PACK_SIZE : safeNum(inv?.n_prev_intransit);
 
     const j = Math.round((g - h + i) * 10) / 10;
     const o = Math.round((l - m + n) * 10) / 10;
@@ -2000,7 +1992,7 @@ function analyzeOrders(orderItems) {
     const huiyang = safeNum(prod.huiyang_inv);
     const indonesia = safeNum(prod.indonesia_inv);
     const myanmar = safeNum(prod.myanmar_inv);
-    const sales2025 = safeNum(prod.sales_2025);
+    const sales2025 = pack12 ? safeNum(prod.sales_2025) * PACK_SIZE : safeNum(prod.sales_2025);
 
     const weeklyRateW = sales2025 > 0 && weeksElapsed > 0
       ? Math.round((sales2025 / weeksElapsed) * 10) / 10 : 0;
