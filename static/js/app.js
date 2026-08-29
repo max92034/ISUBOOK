@@ -261,7 +261,6 @@ function getMergedData() {
       huiyang_inv: huiyangInv,
       indonesia_inv: indonesiaInv,
       myanmar_inv: myanmarInv,
-      factory_unshipped: safeNum(p.factory_unshipped),
       website_on: p.website_on || '',
       web_note: p.web_note || '',
       g, h, i, j, l, m, n, o, p: pDiff,
@@ -338,7 +337,6 @@ function parseMainExcel(workbook) {
       if (!item || item.length < 3) continue;
       webInfo[item] = {
         english_name: safeStr(getCellValue(wsWeb, r, 3)),
-        factory_unshipped: safeNum(getCellValue(wsWeb, r, 8)),
         website_on: safeStr(getCellValue(wsWeb, r, 9)),
         web_note: safeStr(getCellValue(wsWeb, r, 11)),
       };
@@ -393,12 +391,10 @@ function parseMainExcel(workbook) {
     const nPrev = safeNum(getCellValue(wsMain, r, 13));
 
     let englishName = '';
-    let factoryUnshipped = 0;
     let websiteOn = '';
     let webNote = '';
     if (webInfo[item]) {
       englishName = webInfo[item].english_name;
-      factoryUnshipped = webInfo[item].factory_unshipped;
       websiteOn = webInfo[item].website_on;
       webNote = webInfo[item].web_note;
     } else if (discInfo[item]) {
@@ -413,7 +409,6 @@ function parseMainExcel(workbook) {
       notes, notes2, directive, pl_mold: plMold,
       total_produced: totalProduced, huiyang_inv: huiyangInv,
       indonesia_inv: indonesiaInv, myanmar_inv: myanmarInv,
-      factory_unshipped: factoryUnshipped,
       website_on: websiteOn, web_note: webNote,
     });
     inventory.push({
@@ -693,7 +688,7 @@ function doWeeklyImport(importData, filename) {
         notes: '', notes2: '', directive: '', pl_mold: '',
         total_produced: 0, huiyang_inv: 0,
         indonesia_inv: 0, myanmar_inv: 0,
-        factory_unshipped: 0, website_on: '', web_note: '',
+        website_on: '', web_note: '',
       });
       prodMap[itemCode] = state.products[state.products.length - 1];
     }
@@ -734,7 +729,7 @@ function exportCSV() {
     'sales_2025', 'total_shipped', 'status', 'prod_status', 'production_unit',
     'factory_inventory', 'shipping_warehouse', 'notes', 'directive',
     'total_produced', 'total_inv', 'huiyang_inv', 'indonesia_inv', 'myanmar_inv',
-    'factory_unshipped', 'website_on', 'web_note',
+    'website_on', 'web_note',
   ];
   const lines = [fields.join(',')];
   for (const d of data) {
@@ -962,7 +957,6 @@ function renderTable() {
             <div class="detail-item"><div class="detail-label">生產單位</div><div class="detail-value">${d.production_unit || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">工廠庫存 U</div><div class="detail-value">${fmt(d.factory_inventory)}</div></div>
             <div class="detail-item"><div class="detail-label">出貨倉 V</div><div class="detail-value">${fmt(d.shipping_warehouse)}</div></div>
-            <div class="detail-item"><div class="detail-label">工廠未出貨</div><div class="detail-value">${fmt(d.factory_unshipped)}</div></div>
             <div class="detail-item"><div class="detail-label">網站狀態</div><div class="detail-value">${d.website_on === '1' ? '上架中' : d.website_on === '0' ? '已下架' : '-'}</div></div>
             <div class="detail-item"><div class="detail-label">網站備註</div><div class="detail-value">${d.web_note || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">上週結餘 O</div><div class="detail-value">${fmtSigned(d.o)}</div></div>
@@ -1103,7 +1097,6 @@ function showDetail(code) {
       <div class="detail-item"><div class="detail-label">預估可用 (P基準)</div><div class="detail-value">${p.weeks_left_p !== null ? p.weeks_left_p + ' 週' : '無法估算'}</div></div>
       <div class="detail-item"><div class="detail-label">工廠庫存 U</div><div class="detail-value">${fmt(p.factory_inventory)}</div></div>
       <div class="detail-item"><div class="detail-label">出貨倉 V</div><div class="detail-value">${fmt(p.shipping_warehouse)}</div></div>
-      <div class="detail-item"><div class="detail-label">工廠未出貨</div><div class="detail-value">${fmt(p.factory_unshipped)}</div></div>
       <div class="detail-item"><div class="detail-label">網站狀態</div><div class="detail-value">${p.website_on === '1' ? '上架中' : p.website_on === '0' ? '已下架' : '-'}</div></div>
       <div class="detail-item"><div class="detail-label">網站備註</div><div class="detail-value">${p.web_note || '-'}</div></div>
       <div class="detail-item"><div class="detail-label">PL模种</div><div class="detail-value">${p.pl_mold || '-'}</div></div>
