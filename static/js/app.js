@@ -161,17 +161,7 @@ function hasData() {
 
 // ===== Business Logic (ported from Python) =====
 function getWeeksElapsed() {
-  if (state.lastImport && state.lastImport.date && state.lastImport.date !== 'N/A') {
-    const d = new Date(state.lastImport.date);
-    const salesYear = 2025;
-    if (d.getFullYear() === salesYear) {
-      const start = new Date(salesYear, 0, 1);
-      const diffDays = Math.floor((d - start) / (1000 * 60 * 60 * 24));
-      return Math.max(1, Math.floor(diffDays / 7));
-    }
-    return 52;
-  }
-  return 33;
+  return WEEKS_IN_YEAR;
 }
 
 function calculateStatus(j, sales2025, pDiff, iIntransit, weeksElapsed) {
