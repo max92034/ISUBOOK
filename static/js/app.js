@@ -14,6 +14,34 @@ const WEEKS_IN_YEAR = 52;
 const WARN_WEEKS = 4;
 const FOUR_WEEKS = 4;
 const PRODUCE_WEEKS = 13;
+const PACK_SIZE = 12;
+
+const PACK12_SKUS = new Set([
+  'WU77437AA','WU77437AP','WU77438AA','WU77438AP','WU77439AP',
+  'WU77440AA','WU77440AP','WU77441AA','WU77441AP','WU77442AA',
+  'WU77442AP','WU77443AA','WU77443AP','WU77444AP','WU77445AP',
+  'WU77446AP','WU77447AP','WU77448AP','WU77451AA','WU77451AP',
+  'WU77452AP','WU77453AA','WU77453AP','WU77454AP','WU77455AP',
+  'WU77456AP','WU77458AA','WU77458AP','WU77459AP','WU77460AP',
+  'WU77461AP','WU77462AA','WU77462AP','WU77474AA','WU77474AP',
+  'WU77475AA','WU77475AP','WU77476AA','WU77476AP','WU77477AA',
+  'WU77477AP','WU77478AA','WU77478AP','WU77479AA','WU77479AP',
+  'WU77480AA','WU77480AP','WU77481AA','WU77481AP','WU77482AA',
+  'WU77482AP','WU77483AA','WU77483AP','WU77484AA','WU77484AP',
+  'WU77485AA','WU77485AP','WU78025AA','WU78025AP','WU78026AA',
+  'WU78026AP','WU78027AA','WU78027AP','WU78028AA','WU78028AP',
+  'WU78029AA','WU78029AP','WU78030AA','WU78030AP','WU78031AA',
+  'WU78031AP','WU78032AA','WU78032AP','WU78033AA','WU78033AP',
+  'WU78034AA','WU78034AP','WU78035AA','WU78035AP','WU78036AA',
+  'WU78036AP','WU78056AP','WU78057AP','WU78058AP','WU78062AP',
+  'WU78063AP','WU78064AP','WU78135AP','WU78230AP','WU78250AP',
+  'WU78350AA','WU78351AA','WU78352AA','WU78353AA','WU78354AA',
+  'WU78355AA','WU78483AP',
+]);
+
+function isPack12(code) {
+  return PACK12_SKUS.has(code);
+}
 
 const SKU_COLS = ['sku', 'item', 'item code', 'item_code', 'item no', 'item number', 'product', 'product code', 'product id', 'model', 'model no', '型號', '產品編號', '品號', '編號', '商品編號', '貨號'];
 const QTY_COLS = ['quantity', 'qty', 'quantity ordered', 'order quantity', 'order qty', '數量', '訂購數量', '訂單數量', 'amount', 'count', '訂購量'];
@@ -168,12 +196,18 @@ function getMergedData() {
   for (const p of state.products) {
     const code = p.item_code;
     const inv = invMap[code] || {};
-    const g = safeNum(inv.g_inventory);
+    const pack12 = isPack12(code);
+    const gRaw = safeNum(inv.g_inventory);
     const h = safeNum(inv.h_orders);
-    const i = safeNum(inv.i_intransit);
-    const l = safeNum(inv.l_prev_inventory);
+    const iRaw = safeNum(inv.i_intransit);
+    const lRaw = safeNum(inv.l_prev_inventory);
     const m = safeNum(inv.m_prev_orders);
-    const n = safeNum(inv.n_prev_intransit);
+    const nRaw = safeNum(inv.n_prev_intransit);
+
+    const g = pack12 ? gRaw * PACK_SIZE : gRaw;
+    const i = pack12 ? iRaw * PACK_SIZE : iRaw;
+    const l = pack12 ? lRaw * PACK_SIZE : lRaw;
+    const n = pack12 ? nRaw * PACK_SIZE : nRaw;
 
     const j = Math.round((g - h + i) * 10) / 10;
     const o = Math.round((l - m + n) * 10) / 10;
@@ -215,6 +249,7 @@ function getMergedData() {
       item_code: code,
       name: p.name || '',
       english_name: p.english_name || '',
+      is_pack12: pack12,
       discontinued: p.discontinued || '',
       production_unit: p.production_unit || '',
       factory_inventory: safeNum(p.factory_inventory),
@@ -698,7 +733,7 @@ function doWeeklyImport(importData, filename) {
 function exportCSV() {
   const data = state.mergedData;
   const fields = [
-    'item_code', 'name', 'english_name', 'g', 'h', 'i', 'j', 'l', 'm', 'n', 'o', 'p',
+    'item_code', 'name', 'english_name', 'is_pack12', 'g', 'h', 'i', 'j', 'l', 'm', 'n', 'o', 'p',
     'sales_2025', 'total_shipped', 'status', 'prod_status', 'production_unit',
     'factory_inventory', 'shipping_warehouse', 'notes', 'directive',
     'total_produced', 'total_inv', 'huiyang_inv', 'indonesia_inv', 'myanmar_inv',
@@ -898,10 +933,11 @@ function renderTable() {
   tbody.innerHTML = pageData.map(d => {
     const weeksW = d.weeks_left_w !== null ? `${d.weeks_left_w} 週` : '無法估算';
     const estimate = weeksW;
+    const pack12Badge = d.is_pack12 ? '<span class="pack12-badge" title="此SKU的G/I/L/N已從12PC包裝自動轉換為件">12PC</span>' : '';
     return `
       <tr onclick="toggleDetail('${d.item_code}')" style="cursor:pointer">
         <td>${statusIcon(d.status)}</td>
-        <td><strong>${d.item_code}</strong></td>
+        <td><strong>${d.item_code}</strong>${pack12Badge}</td>
         <td>${d.name || ''}</td>
         <td class="num">${fmt(d.g)}</td>
         <td class="num">${fmt(d.h)}</td>
@@ -1943,12 +1979,19 @@ function analyzeOrders(orderItems) {
       };
     }
 
-    const g = safeNum(inv?.g_inventory);
+    const pack12 = isPack12(item.sku);
+    const gRaw = safeNum(inv?.g_inventory);
     const h = safeNum(inv?.h_orders);
-    const i = safeNum(inv?.i_intransit);
-    const l = safeNum(inv?.l_prev_inventory);
+    const iRaw = safeNum(inv?.i_intransit);
+    const lRaw = safeNum(inv?.l_prev_inventory);
     const m = safeNum(inv?.m_prev_orders);
-    const n = safeNum(inv?.n_prev_intransit);
+    const nRaw = safeNum(inv?.n_prev_intransit);
+
+    const g = pack12 ? gRaw * PACK_SIZE : gRaw;
+    const i = pack12 ? iRaw * PACK_SIZE : iRaw;
+    const l = pack12 ? lRaw * PACK_SIZE : lRaw;
+    const n = pack12 ? nRaw * PACK_SIZE : nRaw;
+
     const j = Math.round((g - h + i) * 10) / 10;
     const o = Math.round((l - m + n) * 10) / 10;
     const pDiff = Math.round((j - o) * 10) / 10;
@@ -1999,6 +2042,7 @@ function analyzeOrders(orderItems) {
       name: prod.name || '',
       english_name: prod.english_name || '',
       discontinued: isDiscontinued,
+      is_pack12: pack12,
       g, h, i, j, newJ,
       total_produced: totalProduced,
       total_inv: totalInv,
@@ -2125,13 +2169,14 @@ function renderOrderTable(analysis) {
     else badge = '<span class="status-badge" style="background:#eee;color:#999">?</span>';
 
     const discBadge = a.discontinued ? ' <span class="disc-badge" title="此型號已不再銷售">⚠</span>' : '';
+    const pack12Badge = a.is_pack12 ? ' <span class="pack12-badge" title="G/I/L/N已從12PC包裝自動轉換為件">12PC</span>' : '';
     const rowClass = a.discontinued ? ' class="disc-row"' : '';
     const weeksInfo = a.weeks_left_w !== null ? `${fmt(a.weeks_left_w)}週` : '-';
 
     return `
       <tr onclick="showDetail('${a.sku}')" style="cursor:pointer"${rowClass}>
         <td>${badge}</td>
-        <td><strong>${a.sku}</strong>${discBadge}</td>
+        <td><strong>${a.sku}</strong>${discBadge}${pack12Badge}</td>
         <td>${a.name || a.english_name || '-'}</td>
         <td class="num">${fmt(a.quantity)}</td>
         <td class="num ${valClass(a.j)}">${fmtSigned(a.j)}</td>
