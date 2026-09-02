@@ -49,8 +49,8 @@
       </div>
       <div class="nav-actions">
         <span class="nav-update" id="last-update">載入中...</span>
-        <button class="btn btn-primary" id="import-btn">📥 匯入週資料</button>
-        <button class="btn btn-outline" id="us-weekly-btn">🇺🇸 美國週報</button>
+        <button class="btn btn-primary" id="import-btn">📥 總檔匯入</button>
+        <button class="btn btn-outline" id="us-weekly-btn">🇺🇸 週報更新</button>
         <button class="btn btn-outline" id="export-btn">📊 匯出 CSV</button>
         <button class="btn btn-outline" id="order-btn">📋 訂單分析</button>
         <button class="btn btn-outline" id="daily-order-btn">📝 每日訂單</button>
@@ -228,16 +228,17 @@
   <div class="modal-overlay" id="import-modal" style="display:none">
     <div class="modal">
       <div class="modal-header">
-        <h2>📥 匯入週資料</h2>
+        <h2>📥 總檔匯入</h2>
         <button class="modal-close" id="import-close">✕</button>
       </div>
       <div class="modal-body">
-        <p>上傳檔案來更新庫存資料（自動偵測格式）</p>
+        <p>上傳手動更新完的 USI 總檔 Excel，完整重新匯入所有資料</p>
         <div class="info-box">
-          <strong>系統將自動偵測：</strong>
+          <strong>適用時機：</strong>
           <ul>
-            <li><strong>總檔</strong>（含「USI庫存情況」工作表）→ 完整重新匯入所有資料</li>
-            <li><strong>週報</strong>（4欄格式）→ 更新 G/H/I，舊值移至 L/M/N</li>
+            <li>總檔有修改時（新增型號、海上新貨櫃、欄位調整等）</li>
+            <li>系統會自動偵測欄位位置，不需擔心格式變動</li>
+            <li>匯入後所有資料完全替換為總檔最新內容</li>
           </ul>
         </div>
         <div class="drop-zone" id="drop-zone">
@@ -259,13 +260,13 @@
   <div class="modal-overlay" id="us-weekly-modal" style="display:none">
     <div class="modal">
       <div class="modal-header">
-        <h2>🇺🇸 美國週報匯入</h2>
+        <h2>🇺🇸 週報更新</h2>
         <button class="modal-close" id="us-weekly-close">✕</button>
       </div>
       <div class="modal-body">
-        <p>上傳美國辦公室每週傳來的 QuickBooks 庫存更新檔案</p>
+        <p>每週用美國傳來的 4 欄位紀錄更新上週庫存資料</p>
         <div class="info-box">
-          <strong>檔案格式（QuickBooks 匯出）：</strong>
+          <strong>檔案格式（QuickBooks 匯出，4 欄位）：</strong>
           <ul>
             <li>Item — 產品編號</li>
             <li>Quantity On Purchase Order — 採購在途 → <b>I 海上</b></li>
@@ -283,6 +284,7 @@
             <li>自動計算週變化 P = J - O</li>
             <li>儲存歷史快照</li>
           </ul>
+          <p style="margin-top:4px;font-size:12px;color:var(--color-text-sub)">注意：此方式不會更新海上新貨櫃，有新貨櫃時請用「總檔匯入」。</p>
         </div>
         <div class="drop-zone" id="us-weekly-drop-zone">
           <div class="drop-icon">🇺🇸</div>
