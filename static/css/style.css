@@ -209,7 +209,7 @@ body {
   overflow: auto;
   max-height: 700px;
 }
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
 .data-table thead { position: sticky; top: 0; z-index: 10; }
 .data-table th {
   background: #f1f3f4;
