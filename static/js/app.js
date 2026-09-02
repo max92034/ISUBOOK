@@ -1218,18 +1218,24 @@ function setupEventListeners() {
   // Filter tabs
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
-      if (tab.dataset.prod !== undefined) {
+      const isAll = tab.dataset.status === '' && tab.dataset.prod === '';
+      if (isAll) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        state.statusFilter = '';
+        state.prodFilter = '';
+      } else if (tab.dataset.prod !== undefined && tab.dataset.prod !== '') {
         document.querySelectorAll('.tab[data-prod]').forEach(t => {
           if (t.dataset.prod !== '') t.classList.remove('active');
         });
-        if (tab.dataset.prod !== '') tab.classList.add('active');
-        state.prodFilter = tab.dataset.prod || '';
-      } else {
+        tab.classList.add('active');
+        state.prodFilter = tab.dataset.prod;
+      } else if (tab.dataset.status !== undefined && tab.dataset.status !== '') {
         document.querySelectorAll('.tab[data-status]').forEach(t => {
-          if (t.dataset.prod === undefined || t.dataset.prod === '') t.classList.remove('active');
+          if (t.dataset.status !== '') t.classList.remove('active');
         });
         tab.classList.add('active');
-        state.statusFilter = tab.dataset.status || '';
+        state.statusFilter = tab.dataset.status;
       }
       state.currentPage = 1;
       renderTable();
