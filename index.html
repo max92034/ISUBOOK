@@ -49,12 +49,13 @@
       </div>
       <div class="nav-actions">
         <span class="nav-update" id="last-update">載入中...</span>
-        <button class="btn btn-primary" id="import-btn">📥 總檔匯入</button>
+        <button class="btn btn-primary" id="import-btn">📥 總檔更新(新貨櫃)</button>
         <button class="btn btn-outline" id="us-weekly-btn">🇺🇸 週報更新</button>
         <button class="btn btn-outline" id="export-btn">📊 匯出 CSV</button>
         <button class="btn btn-outline" id="order-btn">📋 訂單分析</button>
         <button class="btn btn-outline" id="daily-order-btn">📝 每日訂單</button>
         <button class="btn btn-outline" id="data-btn">💾 資料管理</button>
+        <button class="btn btn-outline" id="tour-btn" style="padding:6px 10px;font-size:16px;line-height:1">❓</button>
       </div>
     </nav>
 
@@ -228,7 +229,7 @@
   <div class="modal-overlay" id="import-modal" style="display:none">
     <div class="modal">
       <div class="modal-header">
-        <h2>📥 總檔匯入</h2>
+        <h2>📥 總檔更新(新貨櫃)</h2>
         <button class="modal-close" id="import-close">✕</button>
       </div>
       <div class="modal-body">
@@ -244,8 +245,8 @@
         <div class="drop-zone" id="drop-zone">
           <div class="drop-icon">📂</div>
           <p>拖曳檔案到此處或<span class="link">點擊選擇</span></p>
-          <p class="drop-hint">支援 .xlsx, .xls, .csv 格式 | USI 總檔格式</p>
-          <input type="file" id="file-input" accept=".xlsx,.xls,.csv" hidden>
+          <p class="drop-hint">支援 .xlsx, .xls 格式 | 需包含「USI庫存情況」工作表</p>
+          <input type="file" id="file-input" accept=".xlsx,.xls" hidden>
         </div>
         <div id="import-result" class="import-result"></div>
       </div>
@@ -284,7 +285,7 @@
             <li>自動計算週變化 P = J - O</li>
             <li>儲存歷史快照</li>
           </ul>
-          <p style="margin-top:4px;font-size:12px;color:var(--color-text-sub)">注意：此方式不會更新海上新貨櫃，有新貨櫃時請用「總檔匯入」。</p>
+          <p style="margin-top:4px;font-size:12px;color:var(--color-text-sub)">注意：此方式不會更新海上新貨櫃，有新貨櫃時請用「總檔更新(新貨櫃)」。</p>
         </div>
         <div class="drop-zone" id="us-weekly-drop-zone">
           <div class="drop-icon">🇺🇸</div>
@@ -424,6 +425,22 @@ WU78104A4    15.53    3    46.59
       <div class="modal-footer">
         <button class="btn btn-outline" id="daily-order-cancel">取消</button>
         <button class="btn btn-primary" id="daily-order-analyze">開始分析</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tour Guide Overlay -->
+  <div class="tour-overlay" id="tour-overlay" style="display:none"></div>
+  <div class="tour-spotlight" id="tour-spotlight" style="display:none"></div>
+  <div class="tour-tooltip" id="tour-tooltip" style="display:none">
+    <div class="tour-header" id="tour-header"></div>
+    <div class="tour-body" id="tour-body"></div>
+    <div class="tour-footer">
+      <div class="tour-dots" id="tour-dots"></div>
+      <div class="tour-btns">
+        <button class="tour-btn tour-btn-skip" id="tour-skip">跳過</button>
+        <button class="tour-btn tour-btn-prev" id="tour-prev" style="display:none">上一步</button>
+        <button class="tour-btn tour-btn-next" id="tour-next">下一步</button>
       </div>
     </div>
   </div>

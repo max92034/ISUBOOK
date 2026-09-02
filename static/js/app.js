@@ -307,13 +307,6 @@ function getCellValue(ws, r, c) {
   return cell ? cell.v : '';
 }
 
-function detectHasColB(ws, maxRow) {
-  for (let r = 1; r < Math.min(maxRow || 20, 20); r++) {
-    const v = getCellValue(ws, r, 1);
-    if (v !== '' && v !== null && v !== undefined) return true;
-  }
-  return false;
-}
 
 function detectColumnMapping(wsMain, range) {
   let headerRow = 2;
@@ -527,31 +520,6 @@ function parseMainExcel(workbook) {
   return { products, inventory, discontinued };
 }
 
-function parseWeeklyExcel(workbook) {
-  const ws = workbook.Sheets[workbook.SheetNames[0]];
-  const range = XLSX.utils.decode_range(ws['!ref']);
-  const hasColB = detectHasColB(ws, range.e.r);
-
-  const importData = {};
-  for (let r = 1; r <= range.e.r; r++) {
-    const item = safeStr(getCellValue(ws, r, 0));
-    if (!item || item.length < 3) continue;
-
-    let po, so, onHand;
-    if (hasColB) {
-      po = safeNum(getCellValue(ws, r, 1));
-      so = safeNum(getCellValue(ws, r, 2));
-      onHand = safeNum(getCellValue(ws, r, 3));
-    } else {
-      po = safeNum(getCellValue(ws, r, 2));
-      so = safeNum(getCellValue(ws, r, 4));
-      onHand = safeNum(getCellValue(ws, r, 6));
-    }
-    importData[item] = { g: onHand, h: so, i: po };
-  }
-  return importData;
-}
-
 function parseUSWeeklyExcel(workbook) {
   let ws = null;
   let range = null;
@@ -633,57 +601,6 @@ function parseUSWeeklyCSV(text) {
     const so = safeNum(cols[soCol]);
     const onHand = safeNum(cols[onHandCol]);
     importData[item] = { g: onHand, h: so, i: po };
-  }
-  return importData;
-}
-
-function parseCSVFile(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (!lines.length) return {};
-
-  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
-  const hasHeaders = headers.some(h => h.includes('item') || h.includes('quantity'));
-
-  const importData = {};
-
-  if (hasHeaders) {
-    for (let i = 1; i < lines.length; i++) {
-      const cols = parseCSVLine(lines[i]);
-      const item = (cols[0] || '').trim();
-      if (!item || item.length < 3) continue;
-
-      let po = 0, so = 0, onHand = 0;
-      const findCol = (names) => {
-        for (const name of names) {
-          const idx = headers.indexOf(name);
-          if (idx >= 0 && cols[idx]) return safeNum(cols[idx]);
-        }
-        return null;
-      };
-      po = findCol(['quantity on purchase order', 'b', 'c']) ?? 0;
-      so = findCol(['quantity on sales order', 'c', 'e']) ?? 0;
-      onHand = findCol(['quantity on hand', 'd', 'g']) ?? 0;
-      importData[item] = { g: onHand, h: so, i: po };
-    }
-  } else {
-    const hasColB = lines.length > 1 && parseCSVLine(lines[1])[1];
-    for (let i = 1; i < lines.length; i++) {
-      const cols = parseCSVLine(lines[i]);
-      const item = (cols[0] || '').trim();
-      if (!item || item.length < 3) continue;
-
-      let po, so, onHand;
-      if (hasColB) {
-        po = safeNum(cols[1]);
-        so = safeNum(cols[2]);
-        onHand = safeNum(cols[3]);
-      } else {
-        po = safeNum(cols[2]);
-        so = safeNum(cols[4]);
-        onHand = safeNum(cols[6]);
-      }
-      importData[item] = { g: onHand, h: so, i: po };
-    }
   }
   return importData;
 }
@@ -1232,6 +1149,10 @@ function showMainApp() {
   document.getElementById('main-app').style.display = 'block';
   refreshData();
   renderAll();
+  if (!localStorage.getItem('tour_seen')) {
+    setTimeout(startTour, 500);
+    localStorage.setItem('tour_seen', '1');
+  }
 }
 
 function showSetupScreen() {
@@ -1546,6 +1467,12 @@ function setupEventListeners() {
   });
 
   document.getElementById('daily-order-analyze').addEventListener('click', handleDailyOrderAnalyze);
+
+  document.getElementById('tour-btn').addEventListener('click', startTour);
+  document.getElementById('tour-next').addEventListener('click', nextTourStep);
+  document.getElementById('tour-prev').addEventListener('click', prevTourStep);
+  document.getElementById('tour-skip').addEventListener('click', closeTour);
+  window.addEventListener('resize', () => { if (tourActive) repositionTour(); });
 }
 
 function updateDataStatus() {
@@ -1617,102 +1544,43 @@ async function handleImportConfirm() {
   try {
     const file = state.selectedFile;
     const ext = file.name.split('.').pop().toLowerCase();
-    let importData;
 
-    if (ext === 'csv') {
-      const text = await file.text();
-      importData = parseCSVFile(text);
-    } else {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
-
-      if (workbook.Sheets['USI庫存情況']) {
-        const { products, inventory, discontinued } = parseMainExcel(workbook);
-        if (!products.length) {
-          document.getElementById('import-result').innerHTML =
-            '<div class="import-result error">❌ 未找到任何產品資料，請確認檔案包含「USI庫存情況」工作表</div>';
-          btn.disabled = false;
-          btn.textContent = '確認匯入';
-          return;
-        }
-        state.discontinued = discontinued || [];
-        saveDiscontinued();
-        doMainImport(products, inventory);
-        document.getElementById('import-result').innerHTML =
-          `<div class="import-result success">
-            <div class="stat"><span>產品數量</span><strong>${products.length}</strong></div>
-            <div class="stat"><span>庫存記錄</span><strong>${inventory.length}</strong></div>
-          </div>
-          <p style="margin-top:12px;color:var(--color-green)">✓ 總檔匯入成功！頁面將自動刷新...</p>`;
-        btn.textContent = '完成';
-        setTimeout(() => {
-          closeImportModal();
-          btn.disabled = false;
-          btn.textContent = '確認匯入';
-          refreshData();
-          renderAll();
-        }, 2000);
-        return;
-      }
-
-      importData = parseWeeklyExcel(workbook);
-    }
-
-    const count = Object.keys(importData).length;
-    if (!count) {
+    if (ext !== 'xlsx' && ext !== 'xls') {
       document.getElementById('import-result').innerHTML =
-        '<div class="import-result error">❌ 未找到有效資料</div>';
+        '<div class="import-result error">❌ 總檔更新(新貨櫃)僅支援 .xlsx / .xls 格式。若要更新週報，請使用「🇺🇸 週報更新」。</div>';
       btn.disabled = false;
       btn.textContent = '確認匯入';
       return;
     }
 
-    // Validation: detect non-USI files (e.g. customer orders uploaded by mistake)
-    const existingCodes = new Set(state.products.map(p => p.item_code));
-    const sampleItems = Object.keys(importData).slice(0, 50);
-    let matchedCount = 0;
-    let suspiciouslyLarge = 0;
-    for (const code of sampleItems) {
-      if (existingCodes.has(code)) matchedCount++;
-      const vals = importData[code];
-      if (vals.g > 100000 || vals.h > 100000 || vals.i > 100000) suspiciouslyLarge++;
-    }
-    const matchRate = sampleItems.length > 0 ? matchedCount / sampleItems.length : 0;
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: 'array' });
 
-    if (matchRate < 0.1) {
+    if (!workbook.Sheets['USI庫存情況']) {
       document.getElementById('import-result').innerHTML =
-        `<div class="import-result error">
-          ❌ 此檔案可能不是 USI 週報！<br>
-          偵測到 ${sampleItems.length} 個項目中只有 ${matchedCount} 個符合現有產品編號。<br>
-          如果這是客戶訂單，請使用「📋 訂單分析」功能匯入。
-        </div>`;
+        '<div class="import-result error">❌ 找不到「USI庫存情況」工作表，請確認上傳的是 USI 總檔。<br>若要更新週報，請使用「🇺🇸 週報更新」。</div>';
       btn.disabled = false;
       btn.textContent = '確認匯入';
       return;
     }
 
-    if (suspiciouslyLarge > sampleItems.length * 0.3) {
+    const { products, inventory, discontinued } = parseMainExcel(workbook);
+    if (!products.length) {
       document.getElementById('import-result').innerHTML =
-        `<div class="import-result error">
-          ⚠️ 數值異常大（超過 10 萬），請確認檔案格式是否正確。<br>
-          如果這是客戶訂單，請使用「📋 訂單分析」功能匯入。
-        </div>`;
+        '<div class="import-result error">❌ 未找到任何產品資料，請確認檔案包含「USI庫存情況」工作表</div>';
       btn.disabled = false;
       btn.textContent = '確認匯入';
       return;
     }
-
-    const result = doWeeklyImport(importData, file.name);
-
+    state.discontinued = discontinued || [];
+    saveDiscontinued();
+    doMainImport(products, inventory);
     document.getElementById('import-result').innerHTML =
       `<div class="import-result success">
-        <div class="stat"><span>匯入日期</span><strong>${state.lastImport.date}</strong></div>
-        <div class="stat"><span>檔案名稱</span><strong>${file.name}</strong></div>
-        <div class="stat"><span>總項目數</span><strong>${fmt(result.totalItems)}</strong></div>
-        <div class="stat"><span>更新項目</span><strong>${fmt(result.updatedItems)}</strong></div>
-        <div class="stat"><span>新增項目</span><strong>${fmt(result.newItems)}</strong></div>
+        <div class="stat"><span>產品數量</span><strong>${products.length}</strong></div>
+        <div class="stat"><span>庫存記錄</span><strong>${inventory.length}</strong></div>
       </div>
-      <p style="margin-top:12px;color:var(--color-green)">✓ 匯入成功！頁面將自動刷新...</p>`;
+      <p style="margin-top:12px;color:var(--color-green)">✓ 總檔更新(新貨櫃)成功！頁面將自動刷新...</p>`;
     btn.textContent = '完成';
     setTimeout(() => {
       closeImportModal();
@@ -2585,6 +2453,190 @@ async function handleOrderImportConfirm() {
     btn.disabled = false;
     btn.textContent = '確認匯入';
   }
+}
+
+// ===== Tour Guide =====
+const tourSteps = [
+  {
+    target: null,
+    icon: '👋',
+    title: '歡迎使用',
+    body: '歡迎使用 USI 庫存管理工具！這個快速教學將帶您認識所有功能。<br><br>隨時可點擊右上角的 ❓ 重新觀看。',
+  },
+  {
+    target: '#import-btn',
+    icon: '📥',
+    title: '總檔更新（新貨櫃）',
+    body: '<b>方法 1 — 完整大更新</b><br><br>上傳手動更新完的 USI 總檔 Excel，完整重新匯入所有資料。<br><br>適用時機：<br>• 新增型號<br>• 海上新貨櫃<br>• 欄位調整<br><br>系統會自動偵測欄位位置，不需擔心格式變動。',
+  },
+  {
+    target: '#us-weekly-btn',
+    icon: '🇺🇸',
+    title: '週報更新',
+    body: '<b>方法 2 — 每週更新</b><br><br>用美國傳來的 4 欄位 QuickBooks 紀錄更新庫存。<br><br>系統自動：<br>• 將目前 G/H/I 移至 L/M/N（上週快照）<br>• 填入新的 G/H/I<br>• 計算結餘 J 和週變化 P<br><br>⚠️ 此方式<b>不會更新海上新貨櫃</b>，有新貨櫃時請用「總檔更新」。',
+  },
+  {
+    target: '.kpi-grid',
+    icon: '📊',
+    title: 'KPI 庫存概覽',
+    body: '即時顯示庫存狀態概覽：<br><br>🔴 緊急下單 — 結餘 ≤ 0<br>🟡 需關注 — 預估 4 週內用完<br>🟢 庫存健康 — 庫存充足<br>🔵 在途貨櫃 — 海上貨櫃追蹤<br>🔍 需判斷生產 — Q&lt;60 或預估&lt;4 週<br>📦 有貨可出 — J 不足但 Q 有庫存<br>🏭 需要生產 — 總庫存預估 &lt; 13 週',
+  },
+  {
+    target: '.table-toolbar',
+    icon: '📋',
+    title: '產品列表',
+    body: '可搜尋產品編號或名稱，點擊欄位標題排序。<br><br>上方篩選標籤可切換狀態分類（緊急 / 注意 / 健康 / 需判斷生產 / 有貨可出 / 需要生產）。<br><br>點擊產品行左側的 ▶ 可展開詳細資訊。',
+  },
+  {
+    target: '#order-btn',
+    icon: '📋',
+    title: '訂單分析',
+    body: '匯入客戶訂單 Excel 或 CSV，系統自動比對庫存。<br><br>分析結果分為三種狀態：<br>🟢 安全 — 結餘充足<br>📦 需出貨 — 結餘不足但總庫存夠<br>🏭 需生產 — 結餘和總庫存都不夠',
+  },
+  {
+    target: '#daily-order-btn',
+    icon: '📝',
+    title: '每日訂單',
+    body: '收到 Email 訂單後，直接複製 GRID 內容貼上即可分析。<br><br>不需整理成 Excel，系統自動辨識 SKU / QTY / AMOUNT 等欄位。',
+  },
+  {
+    target: '#export-btn',
+    icon: '📊',
+    title: '匯出 CSV',
+    body: '將目前產品列表匯出為 CSV 檔案，方便製作報表或分享。',
+  },
+  {
+    target: '#data-btn',
+    icon: '💾',
+    title: '資料管理',
+    body: '管理瀏覽器中的資料：<br>• 查看資料狀態<br>• 重新初始化（重新匯入總檔）<br>• 清除所有資料',
+  },
+  {
+    target: null,
+    icon: '✅',
+    title: '教學完成！',
+    body: '以上就是所有功能介紹！<br><br>💡 <b>記住兩種更新方式：</b><br>1. 總檔更新 — 有新貨櫃或大改動時用<br>2. 週報更新 — 每週更新庫存數字<br><br>所有資料儲存在您的瀏覽器中，不會上傳到伺服器。<br><br>有問題隨時點擊 ❓ 重新觀看。',
+  },
+];
+
+let tourCurrentStep = 0;
+let tourActive = false;
+
+function startTour() {
+  tourCurrentStep = 0;
+  tourActive = true;
+  document.getElementById('tour-overlay').style.display = 'block';
+  showTourStep(0);
+}
+
+function showTourStep(index) {
+  const step = tourSteps[index];
+  tourCurrentStep = index;
+
+  document.getElementById('tour-header').innerHTML = `${step.icon} ${step.title}`;
+  document.getElementById('tour-body').innerHTML = step.body;
+
+  const dotsEl = document.getElementById('tour-dots');
+  dotsEl.innerHTML = tourSteps.map((_, i) =>
+    `<span class="tour-dot${i === index ? ' active' : ''}"></span>`
+  ).join('');
+
+  const prevBtn = document.getElementById('tour-prev');
+  const nextBtn = document.getElementById('tour-next');
+  const skipBtn = document.getElementById('tour-skip');
+
+  prevBtn.style.display = index > 0 ? '' : 'none';
+  skipBtn.style.display = index === tourSteps.length - 1 ? 'none' : '';
+
+  if (index === tourSteps.length - 1) {
+    nextBtn.textContent = '完成';
+  } else {
+    nextBtn.textContent = '下一步';
+  }
+
+  const tooltip = document.getElementById('tour-tooltip');
+  tooltip.style.display = 'block';
+
+  let targetEl = null;
+  if (step.target) {
+    targetEl = document.querySelector(step.target);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    }
+  }
+
+  setTimeout(() => positionTourElements(targetEl), 350);
+}
+
+function positionTourElements(targetEl) {
+  const spotlight = document.getElementById('tour-spotlight');
+  const tooltip = document.getElementById('tour-tooltip');
+  const tipWidth = tooltip.offsetWidth || 360;
+  const tipHeight = tooltip.offsetHeight || 200;
+  const margin = 14;
+
+  if (!targetEl) {
+    spotlight.style.display = 'none';
+    tooltip.style.left = `${Math.max(margin, (window.innerWidth - tipWidth) / 2)}px`;
+    tooltip.style.top = `${Math.max(margin, (window.innerHeight - tipHeight) / 2)}px`;
+    return;
+  }
+
+  const rect = targetEl.getBoundingClientRect();
+  const pad = 6;
+
+  spotlight.style.display = 'block';
+  spotlight.style.left = `${rect.left - pad}px`;
+  spotlight.style.top = `${rect.top - pad}px`;
+  spotlight.style.width = `${rect.width + pad * 2}px`;
+  spotlight.style.height = `${rect.height + pad * 2}px`;
+
+  let top = rect.bottom + margin;
+  let left = rect.left + rect.width / 2 - tipWidth / 2;
+
+  if (top + tipHeight > window.innerHeight - margin) {
+    top = rect.top - tipHeight - margin;
+  }
+  if (top < margin) {
+    top = Math.max(margin, rect.top);
+    left = rect.right + margin;
+  }
+  if (left + tipWidth > window.innerWidth - margin) {
+    left = rect.left - tipWidth - margin;
+  }
+
+  left = Math.max(margin, Math.min(left, window.innerWidth - tipWidth - margin));
+  top = Math.max(margin, Math.min(top, window.innerHeight - tipHeight - margin));
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function repositionTour() {
+  const step = tourSteps[tourCurrentStep];
+  const targetEl = step.target ? document.querySelector(step.target) : null;
+  positionTourElements(targetEl);
+}
+
+function nextTourStep() {
+  if (tourCurrentStep < tourSteps.length - 1) {
+    showTourStep(tourCurrentStep + 1);
+  } else {
+    closeTour();
+  }
+}
+
+function prevTourStep() {
+  if (tourCurrentStep > 0) {
+    showTourStep(tourCurrentStep - 1);
+  }
+}
+
+function closeTour() {
+  tourActive = false;
+  document.getElementById('tour-overlay').style.display = 'none';
+  document.getElementById('tour-spotlight').style.display = 'none';
+  document.getElementById('tour-tooltip').style.display = 'none';
 }
 
 // ===== Start =====

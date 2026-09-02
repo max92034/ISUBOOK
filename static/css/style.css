@@ -776,3 +776,137 @@ th.sortable.sort-active .sort-icon {
   .search-box input { width: 200px; }
   .setup-card { padding: 24px; }
 }
+
+/* ===== Tour Guide ===== */
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0, 0, 0, 0.55);
+  transition: opacity 0.25s ease;
+}
+
+.tour-spotlight {
+  position: fixed;
+  z-index: 9999;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55), 0 0 0 3px var(--color-blue);
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.tour-tooltip {
+  position: fixed;
+  z-index: 10000;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--color-card);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  font-size: 14px;
+  transition: top 0.3s ease, left 0.3s ease;
+}
+
+.tour-tooltip .tour-header {
+  padding: 14px 16px 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tour-tooltip .tour-body {
+  padding: 0 16px 12px;
+  color: var(--color-text-sub);
+  line-height: 1.6;
+}
+
+.tour-tooltip .tour-footer {
+  padding: 8px 16px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.tour-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tour-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-border);
+  transition: all 0.2s;
+}
+
+.tour-dot.active {
+  background: var(--color-blue);
+  width: 20px;
+  border-radius: 4px;
+}
+
+.tour-btns {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tour-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.tour-btn-skip {
+  background: transparent;
+  color: var(--color-text-sub);
+}
+
+.tour-btn-skip:hover {
+  background: var(--color-hover);
+}
+
+.tour-btn-prev {
+  background: var(--color-border-light);
+  color: var(--color-text);
+}
+
+.tour-btn-prev:hover {
+  background: var(--color-border);
+}
+
+.tour-btn-next {
+  background: var(--color-blue);
+  color: #fff;
+}
+
+.tour-btn-next:hover {
+  filter: brightness(1.1);
+}
+
+.tour-arrow {
+  position: fixed;
+  z-index: 10001;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .tour-tooltip {
+    width: calc(100vw - 24px);
+    left: 12px !important;
+  }
+}
