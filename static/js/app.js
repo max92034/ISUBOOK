@@ -567,15 +567,9 @@ function parseMainExcel(workbook) {
       }
 
       if (totalQty > 0) {
-        let status = 'in_transit';
-        if (etaMatch) {
-          const etaDate = new Date(today.getFullYear(), parseInt(etaMatch[1]) - 1, parseInt(etaMatch[2]));
-          if (etaDate <= today) status = 'arrived';
-        }
-
         containers.push({
           id: `container_col_${cc.col}`,
-          route, ship_date: shipDate, eta, status,
+          route, ship_date: shipDate, eta, status: 'in_transit',
           total_qty: totalQty, item_count: itemCount,
         });
       }
