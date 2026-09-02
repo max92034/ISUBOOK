@@ -348,6 +348,29 @@ function detectColumnMapping(wsMain, range) {
     else if (h.includes('库') || h.includes('庫') || h.includes('仓') || h.includes('倉')) { if (m.g_inventory === undefined) m.g_inventory = c; }
   }
 
+  // Detect container columns: non-inventory columns with date+route pattern or ETA dates
+  let etaRow = -1;
+  for (let r = 0; r < headerRow; r++) {
+    for (let c = 3; c < cwEnd; c++) {
+      if (safeStr(getCellValue(wsMain, r, c)).includes('到')) { etaRow = r; break; }
+    }
+    if (etaRow >= 0) break;
+  }
+  const invColSet = new Set();
+  if (m.g_inventory !== undefined) invColSet.add(m.g_inventory);
+  if (m.h_orders !== undefined) invColSet.add(m.h_orders);
+  if (m.i_intransit !== undefined) invColSet.add(m.i_intransit);
+  if (m.explicit_j !== null) invColSet.add(m.explicit_j);
+  m.container_cols = [];
+  for (let c = 3; c < cwEnd; c++) {
+    if (invColSet.has(c)) continue;
+    const hVal = headers[c];
+    const etaVal = etaRow >= 0 ? safeStr(getCellValue(wsMain, etaRow, c)) : '';
+    if (/^\d+-\d+[A-Za-z]/.test(hVal) || etaVal.includes('到')) {
+      m.container_cols.push({ col: c, header: hVal, eta: etaVal });
+    }
+  }
+
   // Previous week section: after first 結餘 to second 結餘 or 全部訂單
   const pwStart = balanceCols.length > 0 ? balanceCols[0] + 1 : 11;
   let pwEnd = balanceCols.length > 1 ? balanceCols[1] : 14;
@@ -517,7 +540,49 @@ function parseMainExcel(workbook) {
     sales_total: info.sales_total,
   }));
 
-  return { products, inventory, discontinued };
+  // Parse containers from container columns
+  const containers = [];
+  if (colMap.container_cols && colMap.container_cols.length > 0) {
+    const today = new Date();
+    for (const cc of colMap.container_cols) {
+      const header = cc.header;
+      const etaStr = cc.eta;
+
+      let shipDate = '', route = '';
+      const shipMatch = header.match(/(\d+)-(\d+)\s*([A-Za-z]+)/);
+      if (shipMatch) {
+        shipDate = `${shipMatch[1]}-${shipMatch[2]}`;
+        route = shipMatch[3].toUpperCase();
+      }
+
+      let eta = '';
+      const etaMatch = etaStr.match(/(\d+)-(\d+)/);
+      if (etaMatch) eta = `${etaMatch[1]}-${etaMatch[2]}`;
+
+      let totalQty = 0;
+      let itemCount = 0;
+      for (let r = colMap.dataStartRow; r <= range.e.r; r++) {
+        const qty = safeNum(getCellValue(wsMain, r, cc.col));
+        if (qty > 0) { totalQty += qty; itemCount++; }
+      }
+
+      if (totalQty > 0) {
+        let status = 'in_transit';
+        if (etaMatch) {
+          const etaDate = new Date(today.getFullYear(), parseInt(etaMatch[1]) - 1, parseInt(etaMatch[2]));
+          if (etaDate <= today) status = 'arrived';
+        }
+
+        containers.push({
+          id: `container_col_${cc.col}`,
+          route, ship_date: shipDate, eta, status,
+          total_qty: totalQty, item_count: itemCount,
+        });
+      }
+    }
+  }
+
+  return { products, inventory, discontinued, containers };
 }
 
 function parseUSWeeklyExcel(workbook) {
@@ -836,10 +901,9 @@ function renderKPIs() {
 
   const inTransit = state.containers.filter(c => c.status === 'in_transit');
   if (inTransit.length > 0) {
-    const routes = inTransit.map(c => c.route).join(', ');
-    const etas = inTransit.map(c => c.eta).sort();
-    const nextEta = etas[0];
-    document.getElementById('container-detail').textContent = `${routes} | 最近到貨: ${nextEta}`;
+    const routeList = inTransit.map(c => `${c.route}(${c.eta})`).join('、');
+    const totalQty = inTransit.reduce((sum, c) => sum + (c.total_qty || 0), 0);
+    document.getElementById('container-detail').textContent = `${routeList} | 共 ${fmt(totalQty)} 件`;
   } else if (s.sea_items_count > 0) {
     document.getElementById('container-detail').textContent = `${s.sea_items_count} 項產品在海上 (共 ${fmt(s.total_sea_qty)} 件)`;
   } else {
@@ -867,10 +931,10 @@ function renderContainers() {
     <div class="container-card">
       <span class="route-badge">${c.route || '?'}</span>
       <div class="ship-info">出貨: ${c.ship_date} → ETA: ${c.eta}</div>
+      ${c.total_qty ? `<div class="ship-info">${fmt(c.total_qty)} 件 / ${c.item_count || 0} 項</div>` : ''}
       ${c.status === 'arrived'
         ? '<span class="arrived-badge">已到貨</span>'
         : '<span class="eta-badge">在途中</span>'}
-      <button class="delete-btn" onclick="deleteContainer('${c.id}')" title="標記為已到貨並移除">✕</button>
     </div>
   `).join('');
 }
@@ -1345,11 +1409,15 @@ function setupEventListeners() {
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
-      const { products, inventory: newInv, discontinued: newDisc } = parseMainExcel(workbook);
+      const { products, inventory: newInv, discontinued: newDisc, containers: newContainers } = parseMainExcel(workbook);
 
       if (newDisc && newDisc.length) {
         state.discontinued = newDisc;
         saveDiscontinued();
+      }
+      if (newContainers && newContainers.length) {
+        state.containers = newContainers;
+        saveContainers();
       }
 
       const existingInvMap = {};
@@ -1494,7 +1562,7 @@ async function handleSetupFile(file) {
   try {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: 'array' });
-    const { products, inventory, discontinued } = parseMainExcel(workbook);
+    const { products, inventory, discontinued, containers } = parseMainExcel(workbook);
 
     if (!products.length) {
       resultEl.innerHTML = '<div class="import-result error">❌ 未找到任何產品資料，請確認檔案包含「USI庫存情況」工作表</div>';
@@ -1503,12 +1571,15 @@ async function handleSetupFile(file) {
 
     state.discontinued = discontinued || [];
     saveDiscontinued();
+    state.containers = containers || [];
+    saveContainers();
     doMainImport(products, inventory);
 
     resultEl.innerHTML = `
       <div class="import-result success">
         <div class="stat"><span>產品數量</span><strong>${products.length}</strong></div>
         <div class="stat"><span>庫存記錄</span><strong>${inventory.length}</strong></div>
+        <div class="stat"><span>貨櫃數量</span><strong>${(containers || []).length}</strong></div>
       </div>
       <p style="margin-top:12px;color:var(--color-green)">✓ 初始化完成！正在載入儀表板...</p>
     `;
@@ -1564,7 +1635,7 @@ async function handleImportConfirm() {
       return;
     }
 
-    const { products, inventory, discontinued } = parseMainExcel(workbook);
+    const { products, inventory, discontinued, containers } = parseMainExcel(workbook);
     if (!products.length) {
       document.getElementById('import-result').innerHTML =
         '<div class="import-result error">❌ 未找到任何產品資料，請確認檔案包含「USI庫存情況」工作表</div>';
@@ -1574,6 +1645,8 @@ async function handleImportConfirm() {
     }
     state.discontinued = discontinued || [];
     saveDiscontinued();
+    state.containers = containers || [];
+    saveContainers();
     doMainImport(products, inventory);
     document.getElementById('import-result').innerHTML =
       `<div class="import-result success">
