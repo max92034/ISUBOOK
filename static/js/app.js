@@ -406,7 +406,7 @@ function detectColumnMapping(wsMain, range) {
   // Fallbacks for undetected fields (old format compatibility)
   const fb = {
     g_inventory: 6, h_orders: 7, i_intransit: 8,
-    l_prev_inventory: 11, m_prev_orders: 12, n_prev_intransit: 13,
+    l_prev_inventory: 11, m_prev_orders: 12,
     total_produced: 16, huiyang_inv: 17, indonesia_inv: 18, myanmar_inv: 19,
     factory_inventory: 20, shipping_warehouse: 21,
     sales_2025: 22, total_shipped: 23, production_unit: 26, pl_mold: 29,
@@ -414,6 +414,7 @@ function detectColumnMapping(wsMain, range) {
   for (const [k, v] of Object.entries(fb)) {
     if (m[k] === undefined) m[k] = v;
   }
+  // n_prev_intransit: only set if detected; no fallback (some formats lack this column)
 
   // Notes: relative to total_shipped
   m.notes = m.total_shipped + 1;
