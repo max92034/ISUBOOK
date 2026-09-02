@@ -1625,6 +1625,36 @@ async function handleImportConfirm() {
     } else {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
+
+      if (workbook.Sheets['USI庫存情況']) {
+        const { products, inventory, discontinued } = parseMainExcel(workbook);
+        if (!products.length) {
+          document.getElementById('import-result').innerHTML =
+            '<div class="import-result error">❌ 未找到任何產品資料，請確認檔案包含「USI庫存情況」工作表</div>';
+          btn.disabled = false;
+          btn.textContent = '確認匯入';
+          return;
+        }
+        state.discontinued = discontinued || [];
+        saveDiscontinued();
+        doMainImport(products, inventory);
+        document.getElementById('import-result').innerHTML =
+          `<div class="import-result success">
+            <div class="stat"><span>產品數量</span><strong>${products.length}</strong></div>
+            <div class="stat"><span>庫存記錄</span><strong>${inventory.length}</strong></div>
+          </div>
+          <p style="margin-top:12px;color:var(--color-green)">✓ 總檔匯入成功！頁面將自動刷新...</p>`;
+        btn.textContent = '完成';
+        setTimeout(() => {
+          closeImportModal();
+          btn.disabled = false;
+          btn.textContent = '確認匯入';
+          refreshData();
+          renderAll();
+        }, 2000);
+        return;
+      }
+
       importData = parseWeeklyExcel(workbook);
     }
 

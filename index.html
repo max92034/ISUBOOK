@@ -232,15 +232,12 @@
         <button class="modal-close" id="import-close">✕</button>
       </div>
       <div class="modal-body">
-        <p>上傳 USI 總檔（多分頁 Excel）來更新每週庫存資料</p>
+        <p>上傳檔案來更新庫存資料（自動偵測格式）</p>
         <div class="info-box">
-          <strong>系統將自動執行：</strong>
+          <strong>系統將自動偵測：</strong>
           <ul>
-            <li>將目前的 G/H/I 移至 L/M/N（上週快照）</li>
-            <li>填入新的 G/H/I 數值</li>
-            <li>自動計算結餘 J = G - H + I</li>
-            <li>自動計算週變化 P = J - O</li>
-            <li>儲存歷史快照</li>
+            <li><strong>總檔</strong>（含「USI庫存情況」工作表）→ 完整重新匯入所有資料</li>
+            <li><strong>週報</strong>（4欄格式）→ 更新 G/H/I，舊值移至 L/M/N</li>
           </ul>
         </div>
         <div class="drop-zone" id="drop-zone">
