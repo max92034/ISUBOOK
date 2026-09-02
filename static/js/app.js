@@ -194,8 +194,12 @@ function getMergedData() {
     const m = pack12 ? safeNum(inv.m_prev_orders) * PACK_SIZE : safeNum(inv.m_prev_orders);
     const n = pack12 ? safeNum(inv.n_prev_intransit) * PACK_SIZE : safeNum(inv.n_prev_intransit);
 
-    const j = Math.round((g - h + i) * 10) / 10;
-    const o = Math.round((l - m + n) * 10) / 10;
+    const j = (inv.explicit_j !== undefined && inv.explicit_j !== null)
+      ? Math.round((pack12 ? safeNum(inv.explicit_j) * PACK_SIZE : safeNum(inv.explicit_j)) * 10) / 10
+      : Math.round((g - h + i) * 10) / 10;
+    const o = (inv.explicit_o !== undefined && inv.explicit_o !== null)
+      ? Math.round((pack12 ? safeNum(inv.explicit_o) * PACK_SIZE : safeNum(inv.explicit_o)) * 10) / 10
+      : Math.round((l - m + n) * 10) / 10;
     const pDiff = Math.round((j - o) * 10) / 10;
 
     const sales2025Raw = safeNum(p.sales_2025);
@@ -311,6 +315,105 @@ function detectHasColB(ws, maxRow) {
   return false;
 }
 
+function detectColumnMapping(wsMain, range) {
+  let headerRow = 2;
+  for (let r = 0; r <= Math.min(10, range.e.r); r++) {
+    const val = safeStr(getCellValue(wsMain, r, 0));
+    if (val === 'Item' || val === 'item') { headerRow = r; break; }
+  }
+
+  const headers = [];
+  for (let c = 0; c <= range.e.c; c++) {
+    headers.push(safeStr(getCellValue(wsMain, headerRow, c)));
+  }
+
+  const m = {
+    headerRow,
+    dataStartRow: headerRow + 1,
+    item_code: 0,
+    discontinued: 1,
+    name: 2,
+    explicit_j: null,
+    explicit_o: null,
+  };
+
+  // Find 結餘 columns to identify section boundaries
+  const balanceCols = [];
+  for (let c = 3; c < headers.length; c++) {
+    if (headers[c].includes('結餘') || headers[c].includes('结余')) balanceCols.push(c);
+  }
+  if (balanceCols.length >= 1) m.explicit_j = balanceCols[0];
+  if (balanceCols.length >= 2) m.explicit_o = balanceCols[1];
+
+  // Current week section: col 3 to first 結餘
+  const cwEnd = balanceCols.length > 0 ? balanceCols[0] : 10;
+  for (let c = 3; c < cwEnd; c++) {
+    const h = headers[c];
+    if (!h) continue;
+    if (h.includes('海上')) m.i_intransit = c;
+    else if (h.includes('接单') || h.includes('接單')) { if (m.h_orders === undefined) m.h_orders = c; }
+    else if (h.includes('库') || h.includes('庫') || h.includes('仓') || h.includes('倉')) { if (m.g_inventory === undefined) m.g_inventory = c; }
+  }
+
+  // Previous week section: after first 結餘 to second 結餘 or 全部訂單
+  const pwStart = balanceCols.length > 0 ? balanceCols[0] + 1 : 11;
+  let pwEnd = balanceCols.length > 1 ? balanceCols[1] : 14;
+  if (balanceCols.length <= 1) {
+    for (let c = pwStart; c < headers.length; c++) {
+      if (headers[c].includes('全部訂單') || headers[c].includes('全部订单')) { pwEnd = c - 1; break; }
+    }
+  }
+  for (let c = pwStart; c <= pwEnd; c++) {
+    const h = headers[c];
+    if (!h) continue;
+    if (h.includes('海上')) m.n_prev_intransit = c;
+    else if (h.includes('接单') || h.includes('接單')) { if (m.m_prev_orders === undefined) m.m_prev_orders = c; }
+    else if (h.includes('仓') || h.includes('倉') || h.includes('库') || h.includes('庫')) { if (m.l_prev_inventory === undefined) m.l_prev_inventory = c; }
+  }
+
+  // Unique keyword fields
+  for (let c = 0; c < headers.length; c++) {
+    const h = headers[c];
+    if (!h) continue;
+    if (h.includes('全部訂單') || h.includes('全部订单')) m.total_produced = c;
+    else if (h.trim() === 'HY') m.huiyang_inv = c;
+    else if (h.trim() === 'PL') m.indonesia_inv = c;
+    else if (h.trim() === 'XR') m.myanmar_inv = c;
+    else if (h.includes('工廠庫存') || h.includes('工厂库存')) m.factory_inventory = c;
+    else if (h.includes('出貨倉') || h.includes('出货仓')) m.shipping_warehouse = c;
+    else if (h.includes('年售') || h.includes('年销')) m.sales_2025 = c;
+    else if (h.includes('总出货') || h.includes('總出貨')) m.total_shipped = c;
+    else if (h.includes('生產單位') || h.includes('生产单位')) m.production_unit = c;
+    else if (h.includes('PL有模')) m.pl_mold = c;
+  }
+
+  // Fallbacks for undetected fields (old format compatibility)
+  const fb = {
+    g_inventory: 6, h_orders: 7, i_intransit: 8,
+    l_prev_inventory: 11, m_prev_orders: 12, n_prev_intransit: 13,
+    total_produced: 16, huiyang_inv: 17, indonesia_inv: 18, myanmar_inv: 19,
+    factory_inventory: 20, shipping_warehouse: 21,
+    sales_2025: 22, total_shipped: 23, production_unit: 26, pl_mold: 29,
+  };
+  for (const [k, v] of Object.entries(fb)) {
+    if (m[k] === undefined) m[k] = v;
+  }
+
+  // Notes: relative to total_shipped
+  m.notes = m.total_shipped + 1;
+  m.notes2 = m.total_shipped + 2;
+  // Directive: between notes2 and production_unit, or between production_unit and pl_mold
+  if (m.production_unit > m.notes2 + 1) {
+    m.directive = m.notes2 + 1;
+  } else if (m.pl_mold > m.production_unit + 1) {
+    m.directive = m.production_unit + 1;
+  } else {
+    m.directive = null;
+  }
+
+  return m;
+}
+
 function parseMainExcel(workbook) {
   const wsMain = workbook.Sheets['USI庫存情況'];
   if (!wsMain) throw new Error('找不到「USI庫存情況」工作表');
@@ -346,39 +449,45 @@ function parseMainExcel(workbook) {
     }
   }
 
+  const colMap = detectColumnMapping(wsMain, range);
+
   const products = [];
   const inventory = [];
 
-  for (let r = 3; r <= range.e.r; r++) {
-    const item = safeStr(getCellValue(wsMain, r, 0));
+  for (let r = colMap.dataStartRow; r <= range.e.r; r++) {
+    const item = safeStr(getCellValue(wsMain, r, colMap.item_code));
     if (!item || item.length < 3) continue;
 
-    const name = safeStr(getCellValue(wsMain, r, 2));
+    const name = safeStr(getCellValue(wsMain, r, colMap.name));
     if (!name) continue;
 
-    const discontinued = safeStr(getCellValue(wsMain, r, 1));
-    const prodUnit = safeStr(getCellValue(wsMain, r, 26));
-    const factoryInv = safeNum(getCellValue(wsMain, r, 20));
-    const shipWh = safeNum(getCellValue(wsMain, r, 21));
-    const sales2025 = safeNum(getCellValue(wsMain, r, 22));
-    const totalShipped = safeNum(getCellValue(wsMain, r, 23));
-    const notes = safeStr(getCellValue(wsMain, r, 24));
-    const notes2 = safeStr(getCellValue(wsMain, r, 25));
-    const directive = safeStr(getCellValue(wsMain, r, 27));
-    const plMold = safeStr(getCellValue(wsMain, r, 29));
+    const discontinued = safeStr(getCellValue(wsMain, r, colMap.discontinued));
+    const prodUnit = safeStr(getCellValue(wsMain, r, colMap.production_unit));
+    const factoryInv = safeNum(getCellValue(wsMain, r, colMap.factory_inventory));
+    const shipWh = safeNum(getCellValue(wsMain, r, colMap.shipping_warehouse));
+    const sales2025 = safeNum(getCellValue(wsMain, r, colMap.sales_2025));
+    const totalShipped = safeNum(getCellValue(wsMain, r, colMap.total_shipped));
+    const notes = safeStr(getCellValue(wsMain, r, colMap.notes));
+    const notes2 = safeStr(getCellValue(wsMain, r, colMap.notes2));
+    const directive = colMap.directive !== null ? safeStr(getCellValue(wsMain, r, colMap.directive)) : '';
+    const plMold = safeStr(getCellValue(wsMain, r, colMap.pl_mold));
 
-    const totalProduced = safeNum(getCellValue(wsMain, r, 16));
-    const huiyangInv = safeNum(getCellValue(wsMain, r, 17));
-    const indonesiaInv = safeNum(getCellValue(wsMain, r, 18));
-    const myanmarInv = safeNum(getCellValue(wsMain, r, 19));
+    const totalProduced = safeNum(getCellValue(wsMain, r, colMap.total_produced));
+    const huiyangInv = safeNum(getCellValue(wsMain, r, colMap.huiyang_inv));
+    const indonesiaInv = safeNum(getCellValue(wsMain, r, colMap.indonesia_inv));
+    const myanmarInv = safeNum(getCellValue(wsMain, r, colMap.myanmar_inv));
 
-    const gInv = safeNum(getCellValue(wsMain, r, 6));
-    const hOrders = safeNum(getCellValue(wsMain, r, 7));
-    const iIntransit = safeNum(getCellValue(wsMain, r, 8));
+    const gInv = safeNum(getCellValue(wsMain, r, colMap.g_inventory));
+    const hOrders = safeNum(getCellValue(wsMain, r, colMap.h_orders));
+    const iIntransit = safeNum(getCellValue(wsMain, r, colMap.i_intransit));
 
-    const lPrev = safeNum(getCellValue(wsMain, r, 11));
-    const mPrev = safeNum(getCellValue(wsMain, r, 12));
-    const nPrev = safeNum(getCellValue(wsMain, r, 13));
+    const lPrev = safeNum(getCellValue(wsMain, r, colMap.l_prev_inventory));
+    const mPrev = safeNum(getCellValue(wsMain, r, colMap.m_prev_orders));
+    const nPrev = colMap.n_prev_intransit !== undefined
+      ? safeNum(getCellValue(wsMain, r, colMap.n_prev_intransit)) : 0;
+
+    const explicitJ = colMap.explicit_j !== null ? safeNum(getCellValue(wsMain, r, colMap.explicit_j)) : null;
+    const explicitO = colMap.explicit_o !== null ? safeNum(getCellValue(wsMain, r, colMap.explicit_o)) : null;
 
     let englishName = '';
     let websiteOn = '';
@@ -405,6 +514,7 @@ function parseMainExcel(workbook) {
       item_code: item, g_inventory: gInv, h_orders: hOrders,
       i_intransit: iIntransit, l_prev_inventory: lPrev,
       m_prev_orders: mPrev, n_prev_intransit: nPrev,
+      explicit_j: explicitJ, explicit_o: explicitO,
     });
   }
 
@@ -650,6 +760,8 @@ function doWeeklyImport(importData, filename) {
       old.l_prev_inventory = old.g_inventory;
       old.m_prev_orders = old.h_orders;
       old.n_prev_intransit = old.i_intransit;
+      old.explicit_o = old.explicit_j;
+      old.explicit_j = null;
       old.g_inventory = newVals.g;
       old.h_orders = newVals.h;
       old.i_intransit = newVals.i;
@@ -663,6 +775,8 @@ function doWeeklyImport(importData, filename) {
         l_prev_inventory: 0,
         m_prev_orders: 0,
         n_prev_intransit: 0,
+        explicit_j: null,
+        explicit_o: null,
       };
       state.inventory.push(newInv);
       invMap[itemCode] = newInv;
@@ -1967,8 +2081,12 @@ function analyzeOrders(orderItems) {
     const m = pack12 ? safeNum(inv?.m_prev_orders) * PACK_SIZE : safeNum(inv?.m_prev_orders);
     const n = pack12 ? safeNum(inv?.n_prev_intransit) * PACK_SIZE : safeNum(inv?.n_prev_intransit);
 
-    const j = Math.round((g - h + i) * 10) / 10;
-    const o = Math.round((l - m + n) * 10) / 10;
+    const j = (inv?.explicit_j !== undefined && inv?.explicit_j !== null)
+      ? Math.round((pack12 ? safeNum(inv?.explicit_j) * PACK_SIZE : safeNum(inv?.explicit_j)) * 10) / 10
+      : Math.round((g - h + i) * 10) / 10;
+    const o = (inv?.explicit_o !== undefined && inv?.explicit_o !== null)
+      ? Math.round((pack12 ? safeNum(inv?.explicit_o) * PACK_SIZE : safeNum(inv?.explicit_o)) * 10) / 10
+      : Math.round((l - m + n) * 10) / 10;
     const pDiff = Math.round((j - o) * 10) / 10;
     const newJ = Math.round((j - item.quantity) * 10) / 10;
     const totalProduced = safeNum(prod.total_produced);
