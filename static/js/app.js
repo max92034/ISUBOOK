@@ -276,8 +276,6 @@ function computeStats() {
   const yellow = data.filter(d => d.status === 'yellow').length;
   const green = data.filter(d => d.status === 'green').length;
   const inTransitContainers = state.containers.filter(c => c.status === 'in_transit').length;
-  const seaItems = data.filter(d => d.i > 0);
-  const totalSeaQty = seaItems.reduce((sum, d) => sum + d.i, 0);
   const topSellers = data.filter(d => d.sales_2025 > 0).sort((a, b) => b.sales_2025 - a.sales_2025).slice(0, 20);
   const slowSellers = data.filter(d => d.sales_2025 > 0).sort((a, b) => a.sales_2025 - b.sales_2025).slice(0, 20);
   const biggestDrops = data.filter(d => d.p < 0).sort((a, b) => a.p - b.p).slice(0, 10);
@@ -290,8 +288,6 @@ function computeStats() {
     red, yellow, green,
     judge, available, produce,
     in_transit_containers: inTransitContainers,
-    sea_items_count: seaItems.length,
-    total_sea_qty: totalSeaQty,
     last_import: state.lastImport || { date: 'N/A', filename: 'N/A', item_count: 0 },
     weeks_elapsed: getWeeksElapsed(),
     top_sellers: topSellers,
@@ -736,7 +732,7 @@ function doWeeklyImport(importData, filename) {
       const old = invMap[itemCode];
       old.l_prev_inventory = old.g_inventory;
       old.m_prev_orders = old.h_orders;
-      old.n_prev_intransit = old.i_intransit;
+      old.n_prev_intransit = 0;
       old.explicit_o = old.explicit_j;
       old.explicit_j = null;
       old.g_inventory = newVals.g;
@@ -899,8 +895,6 @@ function renderKPIs() {
     const routeList = inTransit.map(c => `${c.route}(${c.eta})`).join('、');
     const totalQty = inTransit.reduce((sum, c) => sum + (c.total_qty || 0), 0);
     document.getElementById('container-detail').textContent = `${routeList} | 共 ${fmt(totalQty)} 件`;
-  } else if (s.sea_items_count > 0) {
-    document.getElementById('container-detail').textContent = `${s.sea_items_count} 項產品在海上 (共 ${fmt(s.total_sea_qty)} 件)`;
   } else {
     document.getElementById('container-detail').textContent = '無在途貨櫃';
   }
@@ -913,13 +907,7 @@ function renderKPIs() {
 function renderContainers() {
   const el = document.getElementById('container-timeline');
   if (!state.containers.length) {
-    const seaItems = state.mergedData.filter(d => d.i > 0);
-    if (seaItems.length > 0) {
-      const totalQty = seaItems.reduce((sum, d) => sum + d.i, 0);
-      el.innerHTML = `<p style="color:var(--color-text-sub)">${seaItems.length} 項產品在海上，共 ${fmt(totalQty)} 件</p>`;
-    } else {
-      el.innerHTML = '<p style="color:var(--color-text-sub)">無在途貨櫃</p>';
-    }
+    el.innerHTML = '<p style="color:var(--color-text-sub)">無在途貨櫃，請使用「總檔更新(新貨櫃)」匯入貨櫃資料</p>';
     return;
   }
   el.innerHTML = state.containers.map(c => `
@@ -1013,7 +1001,6 @@ function renderTable() {
         <td>${d.name || ''}</td>
         <td class="num">${fmt(d.g)}</td>
         <td class="num">${fmt(d.h)}</td>
-        <td class="num">${fmt(d.i)}</td>
         <td class="num ${valClass(d.j)}"><strong>${fmtSigned(d.j)}</strong></td>
         <td class="num ${valClass(d.p)}">${fmtSigned(d.p)}</td>
         <td class="num">${fmt(d.sales_2025)}</td>
@@ -1042,7 +1029,6 @@ function renderTable() {
             <div class="detail-item"><div class="detail-label">上週結餘 O</div><div class="detail-value">${fmtSigned(d.o)}</div></div>
             <div class="detail-item"><div class="detail-label">上週庫存 L</div><div class="detail-value">${fmt(d.l)}</div></div>
             <div class="detail-item"><div class="detail-label">上週接單 M</div><div class="detail-value">${fmt(d.m)}</div></div>
-            <div class="detail-item"><div class="detail-label">上週海上 N</div><div class="detail-value">${fmt(d.n)}</div></div>
             <div class="detail-item"><div class="detail-label">每週銷售 (W基準)</div><div class="detail-value">${fmt(d.weekly_rate_w)} pc/週</div></div>
             <div class="detail-item"><div class="detail-label">預估可用 (W)</div><div class="detail-value">${d.weeks_left_w !== null ? d.weeks_left_w + ' 週' : '無法估算'}</div></div>
             <div class="detail-item"><div class="detail-label">預估可用 (P)</div><div class="detail-value">${d.weeks_left_p !== null ? d.weeks_left_p + ' 週' : '無法估算'}</div></div>
@@ -1163,11 +1149,9 @@ function showDetail(code) {
       <div class="detail-item"><div class="detail-label">停售標記</div><div class="detail-value">${p.discontinued || '-'}</div></div>
       <div class="detail-item"><div class="detail-label">庫存 G</div><div class="detail-value">${fmt(p.g)}</div></div>
       <div class="detail-item"><div class="detail-label">接單 H</div><div class="detail-value">${fmt(p.h)}</div></div>
-      <div class="detail-item"><div class="detail-label">海上 I</div><div class="detail-value">${fmt(p.i)}</div></div>
-      <div class="detail-item"><div class="detail-label">結餘 J (G-H+I)</div><div class="detail-value ${valClass(p.j)}">${fmtSigned(p.j)}</div></div>
+      <div class="detail-item"><div class="detail-label">結餘 J</div><div class="detail-value ${valClass(p.j)}">${fmtSigned(p.j)}</div></div>
       <div class="detail-item"><div class="detail-label">上週庫存 L</div><div class="detail-value">${fmt(p.l)}</div></div>
       <div class="detail-item"><div class="detail-label">上週接單 M</div><div class="detail-value">${fmt(p.m)}</div></div>
-      <div class="detail-item"><div class="detail-label">上週海上 N</div><div class="detail-value">${fmt(p.n)}</div></div>
       <div class="detail-item"><div class="detail-label">上週結餘 O</div><div class="detail-value">${fmtSigned(p.o)}</div></div>
       <div class="detail-item"><div class="detail-label">週變化 P (J-O)</div><div class="detail-value ${valClass(p.p)}">${fmtSigned(p.p)}</div></div>
       <div class="detail-item"><div class="detail-label">2025年銷售 W</div><div class="detail-value">${fmt(p.sales_2025)}</div></div>
@@ -2541,7 +2525,7 @@ const tourSteps = [
     target: '#us-weekly-btn',
     icon: '🇺🇸',
     title: '週報更新',
-    body: '<b>方法 2 — 每週更新</b><br><br>用美國傳來的 4 欄位 QuickBooks 紀錄更新庫存。<br><br>系統自動：<br>• 將目前 G/H/I 移至 L/M/N（上週快照）<br>• 填入新的 G/H/I<br>• 計算結餘 J 和週變化 P<br><br>⚠️ 此方式<b>不會更新海上新貨櫃</b>，有新貨櫃時請用「總檔更新」。',
+    body: '<b>方法 2 — 每週更新</b><br><br>用美國傳來的 4 欄位 QuickBooks 紀錄更新庫存。<br><br>系統自動：<br>• 將目前 G/H 移至 L/M（上週快照）<br>• 填入新的 G/H/I<br>• 計算結餘 J 和週變化 P<br><br>⚠️ 此方式<b>不會更新海上新貨櫃</b>，有新貨櫃時請用「總檔更新」。',
   },
   {
     target: '.kpi-grid',
