@@ -789,7 +789,7 @@ function exportCSV() {
     'item_code', 'name', 'english_name', 'is_pack12', 'g', 'h', 'i', 'j', 'l', 'm', 'n', 'o', 'p',
     'sales_2025', 'total_shipped', 'status', 'prod_status', 'production_unit',
     'notes', 'directive',
-    'total_produced', 'total_inv', 'huiyang_inv', 'indonesia_inv', 'myanmar_inv',
+    'total_produced', 'total_inv', 'weeks_left_total', 'huiyang_inv', 'indonesia_inv', 'myanmar_inv',
     'website_on', 'web_note',
   ];
   const lines = [fields.join(',')];
@@ -951,7 +951,7 @@ function getFiltered() {
   const dir = state.sortDir === 'desc' ? -1 : 1;
   data = [...data].sort((a, b) => {
     let av = a[field], bv = b[field];
-    if (field === 'weeks_left_w') {
+    if (field === 'weeks_left_w' || field === 'weeks_left_total') {
       if (av === null && bv === null) return 0;
       if (av === null) return 1;
       if (bv === null) return -1;
@@ -969,7 +969,7 @@ function renderTable() {
   const tbody = document.getElementById('product-tbody');
 
   if (state.searchQuery && data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;padding:24px;color:var(--color-red)">
+    tbody.innerHTML = `<tr><td colspan="17" style="text-align:center;padding:24px;color:var(--color-red)">
       ❌ 找不到型號「${state.searchQuery}」，請確認編號是否正確</td></tr>`;
     return;
   }
@@ -977,6 +977,7 @@ function renderTable() {
   tbody.innerHTML = pageData.map(d => {
     const weeksW = d.weeks_left_w !== null ? `${d.weeks_left_w} 週` : '無法估算';
     const estimate = weeksW;
+    const weeksTotal = d.weeks_left_total !== null ? `${d.weeks_left_total} 週` : '無法估算';
     const pack12Badge = d.is_pack12 ? '<span class="pack12-badge" title="此SKU的G/I/L/N已從12PC包裝自動轉換為件">12PC</span>' : '';
     return `
       <tr onclick="toggleDetail('${d.item_code}')" style="cursor:pointer">
@@ -994,11 +995,12 @@ function renderTable() {
         <td class="num">${fmt(d.indonesia_inv)}</td>
         <td class="num">${fmt(d.myanmar_inv)}</td>
         <td class="num" style="font-size:12px;color:var(--color-text-sub)">${estimate}</td>
+        <td class="num" style="font-size:12px;color:var(--color-text-sub)">${weeksTotal}</td>
         <td>▼</td>
         <td style="text-align:center">${d.website_on === '1' ? '🟢' : d.website_on === '0' ? '🔴' : '-'}</td>
       </tr>
       <tr class="detail-row" id="detail-${d.item_code}">
-        <td colspan="16">
+        <td colspan="17">
           <div class="detail-grid">
             <div class="detail-item"><div class="detail-label">英文品名</div><div class="detail-value">${d.english_name || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">總庫存 (J+Q)</div><div class="detail-value">${fmt(d.total_inv)}</div></div>
@@ -1013,6 +1015,7 @@ function renderTable() {
             <div class="detail-item"><div class="detail-label">上週接單 M</div><div class="detail-value">${fmt(d.m)}</div></div>
             <div class="detail-item"><div class="detail-label">每週銷售 (W基準)</div><div class="detail-value">${fmt(d.weekly_rate_w)} pc/週</div></div>
             <div class="detail-item"><div class="detail-label">預估可用 (W)</div><div class="detail-value">${d.weeks_left_w !== null ? d.weeks_left_w + ' 週' : '無法估算'}</div></div>
+            <div class="detail-item"><div class="detail-label">總庫存預估 (W)</div><div class="detail-value">${d.weeks_left_total !== null ? d.weeks_left_total + ' 週' : '無法估算'}</div></div>
             <div class="detail-item"><div class="detail-label">備註</div><div class="detail-value">${d.notes || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">高總指示</div><div class="detail-value">${d.directive || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">PL模种</div><div class="detail-value">${d.pl_mold || '-'}</div></div>
@@ -1024,7 +1027,7 @@ function renderTable() {
   }).join('');
 
   if (!pageData.length) {
-    tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:32px;color:var(--color-text-sub)">沒有符合條件的產品</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:32px;color:var(--color-text-sub)">沒有符合條件的產品</td></tr>';
   }
 
   renderPagination(data.length);
@@ -1139,6 +1142,7 @@ function showDetail(code) {
       <div class="detail-item"><div class="detail-label">總出貨量 X</div><div class="detail-value">${fmt(p.total_shipped)}</div></div>
       <div class="detail-item"><div class="detail-label">每週銷售率</div><div class="detail-value">${fmt(p.weekly_rate_w)} pc/週</div></div>
       <div class="detail-item"><div class="detail-label">預估可用 (W基準)</div><div class="detail-value">${p.weeks_left_w !== null ? p.weeks_left_w + ' 週' : '無法估算'}</div></div>
+      <div class="detail-item"><div class="detail-label">總庫存預估 (W基準)</div><div class="detail-value">${p.weeks_left_total !== null ? p.weeks_left_total + ' 週' : '無法估算'}</div></div>
       <div class="detail-item"><div class="detail-label">網站狀態</div><div class="detail-value">${p.website_on === '1' ? '上架中' : p.website_on === '0' ? '已下架' : '-'}</div></div>
       <div class="detail-item"><div class="detail-label">網站備註</div><div class="detail-value">${p.web_note || '-'}</div></div>
       <div class="detail-item"><div class="detail-label">PL模种</div><div class="detail-value">${p.pl_mold || '-'}</div></div>
@@ -2169,7 +2173,7 @@ function renderOrderTable(analysis) {
     const dir = state.orderSortDir === 'asc' ? 1 : -1;
     sorted.sort((a, b) => {
       let va, vb;
-      if (field === 'weeks_left_w') {
+      if (field === 'weeks_left_w' || field === 'weeks_left_total') {
         va = a.weeks_left_w === null ? -1 : a.weeks_left_w;
         vb = b.weeks_left_w === null ? -1 : b.weeks_left_w;
       } else {
