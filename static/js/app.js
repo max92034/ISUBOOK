@@ -211,8 +211,6 @@ function getMergedData() {
     const weeklyRateW = sales2025 > 0 && weeksElapsed > 0
       ? Math.round((sales2025 / weeksElapsed) * 10) / 10 : 0;
     const weeksLeftW = weeklyRateW > 0 ? Math.round((j / weeklyRateW) * 10) / 10 : null;
-    const weeksLeftP = pDiff && pDiff < 0 ? Math.round((j / Math.abs(pDiff)) * 10) / 10 : null;
-
     const totalProduced = safeNum(p.total_produced);
     const huiyangInv = safeNum(p.huiyang_inv);
     const indonesiaInv = safeNum(p.indonesia_inv);
@@ -223,8 +221,6 @@ function getMergedData() {
     const weeksLeftTotal = weeklyRateW > 0 ? Math.round((totalInv / weeklyRateW) * 10) / 10 : null;
 
     const wLow = weeksLeftW !== null && weeksLeftW < FOUR_WEEKS;
-    const pLow = weeksLeftP !== null && weeksLeftP < FOUR_WEEKS;
-    const runningLow = wLow || pLow;
     const jLow = wLow || j < 50;
 
     let prodStatus = 'none';
@@ -232,7 +228,7 @@ function getMergedData() {
       prodStatus = 'produce';
     } else if (jLow && totalProduced > 0) {
       prodStatus = 'available';
-    } else if (totalProduced < 60 || runningLow) {
+    } else if (totalProduced < 60 || wLow) {
       prodStatus = 'judge';
     }
 
@@ -243,12 +239,9 @@ function getMergedData() {
       is_pack12: pack12,
       discontinued: p.discontinued || '',
       production_unit: p.production_unit || '',
-      factory_inventory: safeNum(p.factory_inventory),
-      shipping_warehouse: safeNum(p.shipping_warehouse),
       sales_2025: sales2025,
       total_shipped: totalShipped,
       notes: p.notes || '',
-      notes2: p.notes2 || '',
       directive: p.directive || '',
       pl_mold: p.pl_mold || '',
       total_produced: totalProduced,
@@ -262,7 +255,6 @@ function getMergedData() {
       prod_status: prodStatus,
       weekly_rate_w: weeklyRateW,
       weeks_left_w: weeksLeftW,
-      weeks_left_p: weeksLeftP,
       total_inv: totalInv,
       weeks_left_total: weeksLeftTotal,
     });
@@ -391,8 +383,6 @@ function detectColumnMapping(wsMain, range) {
     else if (h.trim() === 'HY') m.huiyang_inv = c;
     else if (h.trim() === 'PL') m.indonesia_inv = c;
     else if (h.trim() === 'XR') m.myanmar_inv = c;
-    else if (h.includes('工廠庫存') || h.includes('工厂库存')) m.factory_inventory = c;
-    else if (h.includes('出貨倉') || h.includes('出货仓')) m.shipping_warehouse = c;
     else if (h.includes('年售') || h.includes('年销')) m.sales_2025 = c;
     else if (h.includes('总出货') || h.includes('總出貨')) m.total_shipped = c;
     else if (h.includes('生產單位') || h.includes('生产单位')) m.production_unit = c;
@@ -404,7 +394,6 @@ function detectColumnMapping(wsMain, range) {
     g_inventory: 6, h_orders: 7, i_intransit: 8,
     l_prev_inventory: 11, m_prev_orders: 12,
     total_produced: 16, huiyang_inv: 17, indonesia_inv: 18, myanmar_inv: 19,
-    factory_inventory: 20, shipping_warehouse: 21,
     sales_2025: 22, total_shipped: 23, production_unit: 26, pl_mold: 29,
   };
   for (const [k, v] of Object.entries(fb)) {
@@ -476,12 +465,9 @@ function parseMainExcel(workbook) {
 
     const discontinued = safeStr(getCellValue(wsMain, r, colMap.discontinued));
     const prodUnit = safeStr(getCellValue(wsMain, r, colMap.production_unit));
-    const factoryInv = safeNum(getCellValue(wsMain, r, colMap.factory_inventory));
-    const shipWh = safeNum(getCellValue(wsMain, r, colMap.shipping_warehouse));
     const sales2025 = safeNum(getCellValue(wsMain, r, colMap.sales_2025));
     const totalShipped = safeNum(getCellValue(wsMain, r, colMap.total_shipped));
     const notes = safeStr(getCellValue(wsMain, r, colMap.notes));
-    const notes2 = safeStr(getCellValue(wsMain, r, colMap.notes2));
     const directive = colMap.directive !== null ? safeStr(getCellValue(wsMain, r, colMap.directive)) : '';
     const plMold = safeStr(getCellValue(wsMain, r, colMap.pl_mold));
 
@@ -516,9 +502,8 @@ function parseMainExcel(workbook) {
     products.push({
       item_code: item, name, english_name: englishName,
       discontinued, production_unit: prodUnit,
-      factory_inventory: factoryInv, shipping_warehouse: shipWh,
       sales_2025: sales2025, total_shipped: totalShipped,
-      notes, notes2, directive, pl_mold: plMold,
+      notes, directive, pl_mold: plMold,
       total_produced: totalProduced, huiyang_inv: huiyangInv,
       indonesia_inv: indonesiaInv, myanmar_inv: myanmarInv,
       website_on: websiteOn, web_note: webNote,
@@ -760,9 +745,8 @@ function doWeeklyImport(importData, filename) {
       state.products.push({
         item_code: itemCode, name: '', english_name: '',
         discontinued: '', production_unit: '',
-        factory_inventory: 0, shipping_warehouse: 0,
         sales_2025: 0, total_shipped: 0,
-        notes: '', notes2: '', directive: '', pl_mold: '',
+        notes: '', directive: '', pl_mold: '',
         total_produced: 0, huiyang_inv: 0,
         indonesia_inv: 0, myanmar_inv: 0,
         website_on: '', web_note: '',
@@ -804,7 +788,7 @@ function exportCSV() {
   const fields = [
     'item_code', 'name', 'english_name', 'is_pack12', 'g', 'h', 'i', 'j', 'l', 'm', 'n', 'o', 'p',
     'sales_2025', 'total_shipped', 'status', 'prod_status', 'production_unit',
-    'factory_inventory', 'shipping_warehouse', 'notes', 'directive',
+    'notes', 'directive',
     'total_produced', 'total_inv', 'huiyang_inv', 'indonesia_inv', 'myanmar_inv',
     'website_on', 'web_note',
   ];
@@ -967,7 +951,7 @@ function getFiltered() {
   const dir = state.sortDir === 'desc' ? -1 : 1;
   data = [...data].sort((a, b) => {
     let av = a[field], bv = b[field];
-    if (field === 'weeks_left_w' || field === 'weeks_left_p') {
+    if (field === 'weeks_left_w') {
       if (av === null && bv === null) return 0;
       if (av === null) return 1;
       if (bv === null) return -1;
@@ -1022,8 +1006,6 @@ function renderTable() {
             <div class="detail-item"><div class="detail-label">印尼廠 S</div><div class="detail-value">${fmt(d.indonesia_inv)}</div></div>
             <div class="detail-item"><div class="detail-label">緬甸廠 T</div><div class="detail-value">${fmt(d.myanmar_inv)}</div></div>
             <div class="detail-item"><div class="detail-label">生產單位</div><div class="detail-value">${d.production_unit || '-'}</div></div>
-            <div class="detail-item"><div class="detail-label">工廠庫存 U</div><div class="detail-value">${fmt(d.factory_inventory)}</div></div>
-            <div class="detail-item"><div class="detail-label">出貨倉 V</div><div class="detail-value">${fmt(d.shipping_warehouse)}</div></div>
             <div class="detail-item"><div class="detail-label">網站狀態</div><div class="detail-value">${d.website_on === '1' ? '上架中' : d.website_on === '0' ? '已下架' : '-'}</div></div>
             <div class="detail-item"><div class="detail-label">網站備註</div><div class="detail-value">${d.web_note || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">上週結餘 O</div><div class="detail-value">${fmtSigned(d.o)}</div></div>
@@ -1031,7 +1013,6 @@ function renderTable() {
             <div class="detail-item"><div class="detail-label">上週接單 M</div><div class="detail-value">${fmt(d.m)}</div></div>
             <div class="detail-item"><div class="detail-label">每週銷售 (W基準)</div><div class="detail-value">${fmt(d.weekly_rate_w)} pc/週</div></div>
             <div class="detail-item"><div class="detail-label">預估可用 (W)</div><div class="detail-value">${d.weeks_left_w !== null ? d.weeks_left_w + ' 週' : '無法估算'}</div></div>
-            <div class="detail-item"><div class="detail-label">預估可用 (P)</div><div class="detail-value">${d.weeks_left_p !== null ? d.weeks_left_p + ' 週' : '無法估算'}</div></div>
             <div class="detail-item"><div class="detail-label">備註</div><div class="detail-value">${d.notes || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">高總指示</div><div class="detail-value">${d.directive || '-'}</div></div>
             <div class="detail-item"><div class="detail-label">PL模种</div><div class="detail-value">${d.pl_mold || '-'}</div></div>
@@ -1043,7 +1024,7 @@ function renderTable() {
   }).join('');
 
   if (!pageData.length) {
-    tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:32px;color:var(--color-text-sub)">沒有符合條件的產品</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:32px;color:var(--color-text-sub)">沒有符合條件的產品</td></tr>';
   }
 
   renderPagination(data.length);
@@ -1158,9 +1139,6 @@ function showDetail(code) {
       <div class="detail-item"><div class="detail-label">總出貨量 X</div><div class="detail-value">${fmt(p.total_shipped)}</div></div>
       <div class="detail-item"><div class="detail-label">每週銷售率</div><div class="detail-value">${fmt(p.weekly_rate_w)} pc/週</div></div>
       <div class="detail-item"><div class="detail-label">預估可用 (W基準)</div><div class="detail-value">${p.weeks_left_w !== null ? p.weeks_left_w + ' 週' : '無法估算'}</div></div>
-      <div class="detail-item"><div class="detail-label">預估可用 (P基準)</div><div class="detail-value">${p.weeks_left_p !== null ? p.weeks_left_p + ' 週' : '無法估算'}</div></div>
-      <div class="detail-item"><div class="detail-label">工廠庫存 U</div><div class="detail-value">${fmt(p.factory_inventory)}</div></div>
-      <div class="detail-item"><div class="detail-label">出貨倉 V</div><div class="detail-value">${fmt(p.shipping_warehouse)}</div></div>
       <div class="detail-item"><div class="detail-label">網站狀態</div><div class="detail-value">${p.website_on === '1' ? '上架中' : p.website_on === '0' ? '已下架' : '-'}</div></div>
       <div class="detail-item"><div class="detail-label">網站備註</div><div class="detail-value">${p.web_note || '-'}</div></div>
       <div class="detail-item"><div class="detail-label">PL模种</div><div class="detail-value">${p.pl_mold || '-'}</div></div>
@@ -2054,14 +2032,11 @@ function analyzeOrders(orderItems) {
     const weeklyRateW = sales2025 > 0 && weeksElapsed > 0
       ? Math.round((sales2025 / weeksElapsed) * 10) / 10 : 0;
     const weeksLeftW = weeklyRateW > 0 ? Math.round((j / weeklyRateW) * 10) / 10 : null;
-    const weeksLeftP = pDiff && pDiff < 0 ? Math.round((j / Math.abs(pDiff)) * 10) / 10 : null;
 
     const totalInv = Math.round((j + totalProduced) * 10) / 10;
     const weeksLeftTotal = weeklyRateW > 0 ? Math.round((totalInv / weeklyRateW) * 10) / 10 : null;
 
     const wLow = weeksLeftW !== null && weeksLeftW < FOUR_WEEKS;
-    const pLow = weeksLeftP !== null && weeksLeftP < FOUR_WEEKS;
-    const runningLow = wLow || pLow;
     const jLow = wLow || j < 50;
 
     let prodStatus = 'none';
@@ -2069,7 +2044,7 @@ function analyzeOrders(orderItems) {
       prodStatus = 'produce';
     } else if (jLow && totalProduced > 0) {
       prodStatus = 'available';
-    } else if (totalProduced < 60 || runningLow) {
+    } else if (totalProduced < 60 || wLow) {
       prodStatus = 'judge';
     }
 
@@ -2102,7 +2077,6 @@ function analyzeOrders(orderItems) {
       shortage,
       weekly_rate_w: weeklyRateW,
       weeks_left_w: weeksLeftW,
-      weeks_left_p: weeksLeftP,
     };
   });
 }
