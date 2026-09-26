@@ -269,7 +269,9 @@ function computeStats() {
   const green = data.filter(d => d.status === 'green').length;
   const inTransitContainers = state.containers.filter(c => c.status === 'in_transit').length;
   const topSellers = data.filter(d => d.sales_2025 > 0).sort((a, b) => b.sales_2025 - a.sales_2025).slice(0, 20);
-  const slowSellers = data.filter(d => d.sales_2025 > 0).sort((a, b) => a.sales_2025 - b.sales_2025).slice(0, 20);
+  const weeksLeftRank = d => (d.weeks_left_total !== null ? d.weeks_left_total : Infinity);
+  const slowSellers = data.filter(d => d.total_inv > 0)
+    .sort((a, b) => weeksLeftRank(b) - weeksLeftRank(a)).slice(0, 20);
   const biggestDrops = data.filter(d => d.p < 0).sort((a, b) => a.p - b.p).slice(0, 10);
   const judge = data.filter(d => d.prod_status === 'judge').length;
   const available = data.filter(d => d.prod_status === 'available').length;
@@ -1065,7 +1067,53 @@ function renderPagination(total) {
 function renderCharts() {
   if (!state.stats) return;
   renderBarChart('top-chart', state.stats.top_sellers, '#1a73e8');
-  renderBarChart('bottom-chart', state.stats.slow_sellers, '#ea4335');
+  renderWeeksChart('bottom-chart', state.stats.slow_sellers, '#ea4335');
+}
+
+function renderWeeksChart(canvasId, data, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (state.charts[canvasId]) state.charts[canvasId].destroy();
+
+  const maxFinite = Math.max(0, ...data.map(d => d.weeks_left_total ?? 0));
+  const noSaleValue = maxFinite > 0 ? Math.ceil(maxFinite * 1.1) : 1;
+
+  const labels = data.map(d => d.item_code);
+  const values = data.map(d => d.weeks_left_total !== null ? d.weeks_left_total : noSaleValue);
+
+  state.charts[canvasId] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: '預估可用週數（總庫存）',
+        data: values,
+        backgroundColor: data.map(d => d.weeks_left_total !== null ? color : '#f9ab00'),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const item = data[ctx.dataIndex];
+              const weeks = item.weeks_left_total !== null ? `${fmt(item.weeks_left_total)} 週` : '無銷售紀錄（∞）';
+              return [`${item.name || ''}`, `預估可用: ${weeks}`, `總庫存: ${fmt(item.total_inv)}`, `週銷速: ${fmt(item.weekly_rate_w)}`];
+            }
+          }
+        }
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { font: { size: 11 } } },
+        y: { ticks: { font: { size: 10 } } },
+      },
+    },
+  });
 }
 
 function renderBarChart(canvasId, data, color) {
