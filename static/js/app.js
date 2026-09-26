@@ -262,6 +262,25 @@ function getMergedData() {
   return merged;
 }
 
+function computeRecentDemand() {
+  const dates = Object.keys(state.snapshots).sort();
+  const used = dates.slice(-9);
+  if (used.length < 2) return { demand: null, weeks: 0 };
+  const jOf = s => safeNum(s.g_inventory) - safeNum(s.h_orders) + safeNum(s.i_intransit);
+  const demand = {};
+  for (let k = 1; k < used.length; k++) {
+    const prev = state.snapshots[used[k - 1]];
+    const cur = state.snapshots[used[k]];
+    for (const code in cur) {
+      if (!(code in prev)) continue;
+      const drop = jOf(prev[code]) - jOf(cur[code]);
+      if (!(code in demand)) demand[code] = 0;
+      if (drop > 0) demand[code] += drop;
+    }
+  }
+  return { demand, weeks: used.length - 1 };
+}
+
 function computeStats() {
   const data = state.mergedData;
   const red = data.filter(d => d.status === 'red').length;
@@ -270,8 +289,21 @@ function computeStats() {
   const inTransitContainers = state.containers.filter(c => c.status === 'in_transit').length;
   const topSellers = data.filter(d => d.sales_2025 > 0).sort((a, b) => b.sales_2025 - a.sales_2025).slice(0, 20);
   const weeksLeftRank = d => (d.weeks_left_w !== null ? d.weeks_left_w : Infinity);
-  const slowSellers = data.filter(d => d.j > 0)
-    .sort((a, b) => weeksLeftRank(b) - weeksLeftRank(a)).slice(0, 20);
+  const recent = computeRecentDemand();
+  let slowSellers;
+  if (recent.demand) {
+    slowSellers = data.filter(d => d.j > 0)
+      .map(d => ({
+        ...d,
+        recent_demand: (recent.demand[d.item_code] || 0) * (d.is_pack12 ? PACK_SIZE : 1),
+        recent_weeks: recent.weeks,
+      }))
+      .sort((a, b) => a.recent_demand - b.recent_demand || b.j - a.j)
+      .slice(0, 20);
+  } else {
+    slowSellers = data.filter(d => d.j > 0)
+      .sort((a, b) => weeksLeftRank(b) - weeksLeftRank(a)).slice(0, 20);
+  }
   const biggestDrops = data.filter(d => d.p < 0).sort((a, b) => a.p - b.p).slice(0, 10);
   const judge = data.filter(d => d.prod_status === 'judge').length;
   const available = data.filter(d => d.prod_status === 'available').length;
@@ -1075,20 +1107,26 @@ function renderWeeksChart(canvasId, data, color) {
   if (!canvas) return;
   if (state.charts[canvasId]) state.charts[canvasId].destroy();
 
-  const maxFinite = Math.max(0, ...data.map(d => d.weeks_left_w ?? 0));
-  const noSaleValue = maxFinite > 0 ? Math.ceil(maxFinite * 1.1) : 1;
+  const useRecent = data.some(d => d.recent_demand !== undefined);
+  const metric = d => useRecent ? d.recent_demand : d.weeks_left_w;
+  const isWorst = d => useRecent ? d.recent_demand === 0 : d.weeks_left_w === null;
+  const finiteVals = data.map(metric).filter(v => v !== null && !(useRecent && v === 0));
+  const maxFinite = Math.max(0, ...finiteVals);
+  const worstValue = maxFinite > 0 ? Math.ceil(maxFinite * 1.1) : 1;
+  const recentWeeks = (data.length && data[0].recent_weeks) || 0;
+  const chartLabel = useRecent ? `近 ${recentWeeks} 次匯入動銷量` : '預估可用週數（美國庫存）';
 
   const labels = data.map(d => d.item_code);
-  const values = data.map(d => d.weeks_left_w !== null ? d.weeks_left_w : noSaleValue);
+  const values = data.map(d => isWorst(d) ? worstValue : metric(d));
 
   state.charts[canvasId] = new Chart(canvas, {
     type: 'bar',
     data: {
       labels,
       datasets: [{
-        label: '預估可用週數（美國庫存）',
+        label: chartLabel,
         data: values,
-        backgroundColor: data.map(d => d.weeks_left_w !== null ? color : '#f9ab00'),
+        backgroundColor: data.map(d => isWorst(d) ? '#f9ab00' : color),
         borderRadius: 4,
       }],
     },
@@ -1102,8 +1140,11 @@ function renderWeeksChart(canvasId, data, color) {
           callbacks: {
             label: (ctx) => {
               const item = data[ctx.dataIndex];
-              const weeks = item.weeks_left_w !== null ? `${fmt(item.weeks_left_w)} 週` : '無銷售紀錄（∞）';
-              return [`${item.name || ''}`, `預估可用: ${weeks}`, `美國庫存: ${fmt(item.j)}`, `週銷速: ${fmt(item.weekly_rate_w)}`];
+              const weeksTxt = item.weeks_left_w !== null ? `${fmt(item.weeks_left_w)} 週` : '無銷售紀錄（∞）';
+              const demandTxt = useRecent
+                ? `近期動銷: ${item.recent_demand === 0 ? '無動銷' : fmt(item.recent_demand)}`
+                : `預估可用: ${weeksTxt}`;
+              return [`${item.name || ''}`, demandTxt, `美國庫存: ${fmt(item.j)}`, `預估可用: ${weeksTxt}`, `週銷速: ${fmt(item.weekly_rate_w)}`];
             }
           }
         }
