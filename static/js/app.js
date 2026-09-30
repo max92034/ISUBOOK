@@ -1037,7 +1037,7 @@ function renderTable() {
         <td colspan="17">
           <div class="detail-grid">
             <div class="detail-item"><div class="detail-label">英文品名</div><div class="detail-value">${d.english_name || '-'}</div></div>
-            <div class="detail-item"><div class="detail-label">總庫存 (J+R)</div><div class="detail-value">${fmt(d.total_inv)}</div></div>
+            <div class="detail-item"><div class="detail-label">總庫存 (J+Q)</div><div class="detail-value">${fmt(d.total_inv)}</div></div>
             <div class="detail-item"><div class="detail-label">惠陽廠 R</div><div class="detail-value">${fmt(d.huiyang_inv)}</div></div>
             <div class="detail-item"><div class="detail-label">印尼廠 S</div><div class="detail-value">${fmt(d.indonesia_inv)}</div></div>
             <div class="detail-item"><div class="detail-label">緬甸廠 T</div><div class="detail-value">${fmt(d.myanmar_inv)}</div></div>
@@ -1213,7 +1213,7 @@ function showDetail(code) {
   body.innerHTML = `
     <div class="detail-grid" style="grid-template-columns:repeat(3,1fr)">
       <div class="detail-item"><div class="detail-label">英文品名</div><div class="detail-value">${p.english_name || '-'}</div></div>
-      <div class="detail-item"><div class="detail-label">總庫存 (J+R)</div><div class="detail-value">${fmt(p.total_inv)}</div></div>
+      <div class="detail-item"><div class="detail-label">總庫存 (J+Q)</div><div class="detail-value">${fmt(p.total_inv)}</div></div>
       <div class="detail-item"><div class="detail-label">惠陽廠 R</div><div class="detail-value">${fmt(p.huiyang_inv)}</div></div>
       <div class="detail-item"><div class="detail-label">印尼廠 S</div><div class="detail-value">${fmt(p.indonesia_inv)}</div></div>
       <div class="detail-item"><div class="detail-label">緬甸廠 T</div><div class="detail-value">${fmt(p.myanmar_inv)}</div></div>
